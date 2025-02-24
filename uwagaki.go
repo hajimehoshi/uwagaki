@@ -224,16 +224,15 @@ func replace(work string, replacedFilesDir string, modulePath string, moduleSrcF
 	return nil
 }
 
-// ResolvePaths resolves package paths for the specified environment directory.
+// ResolvePaths resolves package paths so that they can be passed to Go commands at a different directory.
 // A relative package path will be resolved to a path with a module path if go.mod exists,
 // or an absolute path otherwise.
 //
-// The returned value can be passed to go commands like 'go run' at the working
-// directory envDir.
+// The returned value can be passed to Go commands like 'go run' almost anywhere.
 //
 // If pkgs is empty, ResolvePaths returns a module path if go.mod exists,
 // or an absolute path for the current directory otherwise.
-func ResolvePaths(envDir string, pkgs []string) ([]string, error) {
+func ResolvePaths(pkgs []string) ([]string, error) {
 	if len(pkgs) == 0 {
 		pkgs = []string{"."}
 	}

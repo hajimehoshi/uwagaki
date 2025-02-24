@@ -61,7 +61,7 @@ func main() {
 				t.Fatal(err)
 			}
 
-			paths, err := uwagaki.ResolvePaths(dir, []string{filepath.Join(tmpDir, "main.go")})
+			paths, err := uwagaki.ResolvePaths([]string{filepath.Join(tmpDir, "main.go")})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -139,7 +139,7 @@ func main() {
 		t.Fatal(err)
 	}
 
-	paths, err := uwagaki.ResolvePaths(dir, []string{filepath.Join(tmpDir, "main.go")})
+	paths, err := uwagaki.ResolvePaths([]string{filepath.Join(tmpDir, "main.go")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestCreateEnvironmentWithDirectoryPath2(t *testing.T) {
 	if err := os.Chdir("./internal"); err != nil {
 		t.Fatal(err)
 	}
-	paths, err := uwagaki.ResolvePaths(dir, []string{"./testmainpkg"})
+	paths, err := uwagaki.ResolvePaths([]string{"./testmainpkg"})
 	if err != nil {
 		t.Fatal(err)
 	}
