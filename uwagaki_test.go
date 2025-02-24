@@ -48,7 +48,7 @@ func AdditionalFuncByUwagaki() {
 			}
 			defer os.RemoveAll(dir)
 
-			if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(`package main
+			if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte(`package main
 
 import (
 	"github.com/hajimehoshi/ebiten/v2"
@@ -61,7 +61,12 @@ func main() {
 				t.Fatal(err)
 			}
 
-			cmd := exec.Command("go", "run", "main.go")
+			paths, err := uwagaki.ResolvePaths(dir, []string{filepath.Join(tmpDir, "main.go")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command("go", "run")
+			cmd.Args = append(cmd.Args, paths...)
 			cmd.Dir = dir
 			out, err := cmd.Output()
 			if err != nil {
@@ -79,6 +84,8 @@ func main() {
 }
 
 func TestCreateEnvironmentWithDirectoryPath(t *testing.T) {
+	tmpDir := os.TempDir()
+
 	dir, err := uwagaki.CreateEnvironment([]string{"./internal/testpkg"}, []uwagaki.ReplaceItem{
 		{
 			Mod:  "github.com/hajimehoshi/uwagaki",
@@ -118,7 +125,7 @@ func Foo2() {
 	}
 	defer os.RemoveAll(dir)
 
-	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(`package main
+	if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte(`package main
 
 import (
 	"github.com/hajimehoshi/uwagaki"
@@ -132,7 +139,12 @@ func main() {
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command("go", "run", "main.go")
+	paths, err := uwagaki.ResolvePaths(dir, []string{filepath.Join(tmpDir, "main.go")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("go", "run")
+	cmd.Args = append(cmd.Args, paths...)
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
