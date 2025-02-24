@@ -7,11 +7,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"golang.org/x/mod/modfile"
 )
 
 // ReplaceItem represents a file replacement.
@@ -55,15 +57,35 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 		}
 	}
 
+	randomModuleName := "uwagaki_" + time.Now().UTC().Format("20060102150405")
+
+	var origModPath string
 	if currentGoMod != "" {
-		// Copy the current go.mod and go.sum to the work directory.
-		if err := copyFile(filepath.Join(work, "go.mod"), currentGoMod); err != nil {
+		// Copy the current go.mod and go.sum to the work directory, but with modifying the module name.
+		content, err := os.ReadFile(currentGoMod)
+		if err != nil {
+			return "", err
+		}
+		mod, err := modfile.ParseLax(currentGoMod, content, nil)
+		if err != nil {
+			return "", err
+		}
+		origModPath = mod.Module.Mod.Path
+		// TODO: Copy mod.Replace.
+		if err := mod.AddModuleStmt(randomModuleName); err != nil {
+			return "", err
+		}
+		content2, err := mod.Format()
+		if err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(filepath.Join(work, "go.mod"), content2, 0644); err != nil {
 			return "", err
 		}
 	} else {
 		// go mod init
 		var buf bytes.Buffer
-		cmd := exec.Command("go", "mod", "init", "uwakagi")
+		cmd := exec.Command("go", "mod", "init", randomModuleName)
 		cmd.Stderr = &buf
 		cmd.Dir = work
 		if err := cmd.Run(); err != nil {
@@ -73,17 +95,37 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 
 	// go get
 	{
-		var buf bytes.Buffer
-		cmd := exec.Command("go", "get")
-		cmd.Args = append(cmd.Args, pkgs...)
-		cmd.Stderr = &buf
-		cmd.Dir = work
-		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
+		var resolvedPath []string
+		for _, pkg := range pkgs {
+			// go-get'ing with reolative paths doesn't make sense. Skip them.
+			if modfile.IsDirectoryPath(pkg) {
+				continue
+			}
+			resolvedPath = append(resolvedPath, pkg)
+		}
+		if len(resolvedPath) > 0 {
+			// go get
+			{
+				var buf bytes.Buffer
+				cmd := exec.Command("go", "get")
+				cmd.Args = append(cmd.Args, resolvedPath...)
+				cmd.Stderr = &buf
+				cmd.Dir = work
+				if err := cmd.Run(); err != nil {
+					return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
+				}
+			}
 		}
 	}
 
 	replacedModDir := filepath.Join(work, "mod")
+
+	// Redirect the current module to its current source, espcially for directory packge paths.
+	if origModPath != "" {
+		if err := replace(work, replacedModDir, origModPath, filepath.Dir(currentGoMod)); err != nil {
+			return "", err
+		}
+	}
 
 	modVisited := map[string]struct{}{}
 	for _, r := range replaces {
@@ -112,39 +154,17 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 				modFilepath = strings.TrimSpace(string(out))
 			}
 
-			// Copy files.
-			dst := filepath.Join(replacedModDir, filepath.FromSlash(r.Mod))
-			f, err := os.Stat(dst)
-			if err != nil && !errors.Is(err, os.ErrNotExist) {
+			if err := replace(work, replacedModDir, r.Mod, modFilepath); err != nil {
 				return "", err
-			}
-			if err == nil && !f.IsDir() {
-				return "", fmt.Errorf("uwagaki: %s is not a directory", dst)
-			}
-			if errors.Is(err, os.ErrNotExist) {
-				// TODO: Use symbolic linkes instead of copying files.
-				if err := os.CopyFS(dst, os.DirFS(modFilepath)); err != nil {
-					return "", err
-				}
-			}
-
-			// go mod edit
-			{
-				dstRel := "." + string(filepath.Separator) + filepath.Join("mod", filepath.FromSlash(r.Mod))
-				var buf bytes.Buffer
-				// TODO: What if the file path includes a space?
-				cmd := exec.Command("go", "mod", "edit", "-replace", r.Mod+"="+dstRel)
-				cmd.Stderr = &buf
-				cmd.Dir = work
-				if err := cmd.Run(); err != nil {
-					return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
-				}
 			}
 
 			modVisited[r.Mod] = struct{}{}
 		}
 
 		dst := filepath.Join(replacedModDir, filepath.FromSlash(r.Mod), filepath.FromSlash(r.Path))
+		if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+			return "", err
+		}
 		if err := os.WriteFile(dst, r.Content, 0644); err != nil {
 			return "", err
 		}
@@ -153,21 +173,35 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 	return work, nil
 }
 
-func copyFile(dst, src string) error {
-	out, err := os.Create(dst)
-	if err != nil {
+func replace(work string, replacedFilesDir string, modulePath string, moduleSrcFilepath string) error {
+	// Copy files.
+	dst := filepath.Join(replacedFilesDir, filepath.FromSlash(modulePath))
+	f, err := os.Stat(dst)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	defer out.Close()
+	if err == nil && !f.IsDir() {
+		return fmt.Errorf("uwagaki: %s is not a directory", dst)
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		// TODO: Use symbolic linkes instead of copying files.
+		if err := os.CopyFS(dst, os.DirFS(moduleSrcFilepath)); err != nil {
+			return err
+		}
+	}
 
-	in, err := os.Open(src)
-	if err != nil {
-		return err
+	// go mod edit
+	{
+		dstRel := "." + string(filepath.Separator) + filepath.Join("mod", filepath.FromSlash(modulePath))
+		var buf bytes.Buffer
+		// TODO: What if the file path includes a space?
+		cmd := exec.Command("go", "mod", "edit", "-replace", modulePath+"="+dstRel)
+		cmd.Stderr = &buf
+		cmd.Dir = work
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
+		}
 	}
-	defer in.Close()
 
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
 	return nil
 }
