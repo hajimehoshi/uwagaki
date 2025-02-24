@@ -160,12 +160,27 @@ func main() {
 	}
 }
 
-func TestCreateEnvironmentWithDirectoryPath2(t *testing.T) {
+func TestCreateEnvironmentWithDirectoryPathWithRelativePath(t *testing.T) {
 	if err := os.Chdir("./internal"); err != nil {
 		t.Fatal(err)
 	}
 
-	dir, paths, err := uwagaki.CreateEnvironment([]string{"./testmainpkg"}, nil)
+	dir, paths, err := uwagaki.CreateEnvironment([]string{"./testmainpkg"}, []uwagaki.ReplaceItem{
+		{
+			Mod:  "github.com/hajimehoshi/uwagaki",
+			Path: "internal/testpkg/foo.go",
+			Content: []byte(`package testpkg
+
+import (
+	"fmt"
+)
+
+func Foo() {
+	fmt.Println("Overwritten Foo is called")
+}
+`),
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +201,7 @@ func TestCreateEnvironmentWithDirectoryPath2(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got, want := strings.TrimSpace(string(out)), "Foo is called"; got != want {
+	if got, want := strings.TrimSpace(string(out)), "Overwritten Foo is called"; got != want {
 		t.Errorf("got: %s, want: %s", got, want)
 	}
 }
