@@ -29,10 +29,12 @@ type ReplaceItem struct {
 	Content []byte
 }
 
-// CreateEnvironment creates a directory and returns it where you can run go commands.
+// CreateEnvironment returns a new directory where you can run go commands,
+// and resolved paths that can be used in the new environment.
 // The returned directory includes go.mod and go.sum files to replace the specified files.
+// The returned paths can be passed to Go commands like 'go run' in the new environment.
 //
-// pkgs is a list of package paths. pkgs is passed to 'go get' command to create go.mod.
+// paths is a list of package paths that is passed to 'go get' command to create go.mod.
 //
 // The returned directory is temporary and you should remove it after using it.
 //
@@ -41,10 +43,10 @@ type ReplaceItem struct {
 //
 // Usually, Go's -overlay flag cannot be used for external modules (see https://go.dev/cl/650475).
 // CreateEnvironment creates a temporary environment to replace files in external modules by go.mod.
-func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err error) {
-	work, err = os.MkdirTemp("", "")
+func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, newPaths []string, err error) {
+	work, err := os.MkdirTemp("", "")
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	// If the current directory has go.mod, use this.
@@ -65,23 +67,23 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 		// Copy the current go.mod and go.sum to the work directory, but with modifying the module name.
 		content, err := os.ReadFile(currentGoMod)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		mod, err := modfile.ParseLax(currentGoMod, content, nil)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		origModPath = mod.Module.Mod.Path
 		// TODO: Copy mod.Replace.
 		if err := mod.AddModuleStmt(randomModuleName); err != nil {
-			return "", err
+			return "", nil, err
 		}
 		content2, err := mod.Format()
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		if err := os.WriteFile(filepath.Join(work, "go.mod"), content2, 0644); err != nil {
-			return "", err
+			return "", nil, err
 		}
 	} else {
 		// go mod init
@@ -90,29 +92,29 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 		cmd.Stderr = &buf
 		cmd.Dir = work
 		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
+			return "", nil, fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
 		}
 	}
 
 	// go get
 	{
-		var resolvedPath []string
-		for _, pkg := range pkgs {
+		var nonDirPaths []string
+		for _, path := range paths {
 			// go-get'ing with reolative paths doesn't make sense. Skip them.
-			if modfile.IsDirectoryPath(pkg) {
+			if modfile.IsDirectoryPath(path) {
 				continue
 			}
-			resolvedPath = append(resolvedPath, pkg)
+			nonDirPaths = append(nonDirPaths, path)
 		}
-		if len(resolvedPath) > 0 {
+		if len(nonDirPaths) > 0 {
 			// go get
 			var buf bytes.Buffer
 			cmd := exec.Command("go", "get")
-			cmd.Args = append(cmd.Args, resolvedPath...)
+			cmd.Args = append(cmd.Args, nonDirPaths...)
 			cmd.Stderr = &buf
 			cmd.Dir = work
 			if err := cmd.Run(); err != nil {
-				return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
+				return "", nil, fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
 			}
 		}
 	}
@@ -126,7 +128,7 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 			cmd.Stderr = &buf
 			cmd.Dir = work
 			if err := cmd.Run(); err != nil {
-				return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
+				return "", nil, fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
 			}
 		}
 		// go mod edit
@@ -138,7 +140,7 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 			cmd.Stderr = &buf
 			cmd.Dir = work
 			if err := cmd.Run(); err != nil {
-				return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
+				return "", nil, fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
 			}
 		}
 	}
@@ -155,7 +157,7 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 				cmd.Stderr = &buf
 				cmd.Dir = work
 				if err := cmd.Run(); err != nil {
-					return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
+					return "", nil, fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
 				}
 			}
 			// go list
@@ -167,13 +169,13 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 				cmd.Dir = work
 				out, err := cmd.Output()
 				if err != nil {
-					return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
+					return "", nil, fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
 				}
 				modFilepath = strings.TrimSpace(string(out))
 			}
 
 			if err := replace(work, replacedModDir, r.Mod, modFilepath); err != nil {
-				return "", err
+				return "", nil, err
 			}
 
 			modVisited[r.Mod] = struct{}{}
@@ -181,14 +183,55 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 
 		dst := filepath.Join(replacedModDir, filepath.FromSlash(r.Mod), filepath.FromSlash(r.Path))
 		if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-			return "", err
+			return "", nil, err
 		}
 		if err := os.WriteFile(dst, r.Content, 0644); err != nil {
-			return "", err
+			return "", nil, err
 		}
 	}
 
-	return work, nil
+	if len(paths) == 0 {
+		paths = []string{"."}
+	}
+
+	var currentModPath string
+	if currentGoMod != "" {
+		cmd := exec.Command("go", "list", "-m", "-f", "{{.Path}}")
+		out, err := cmd.Output()
+		if err != nil {
+			if ee, ok := err.(*exec.ExitError); ok {
+				return "", nil, fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), ee, ee.Stderr)
+			}
+			return "", nil, err
+		}
+		currentModPath = strings.TrimSpace(string(out))
+	}
+
+	newPaths = make([]string, len(paths))
+	for i, pkg := range paths {
+		if !modfile.IsDirectoryPath(pkg) {
+			newPaths[i] = pkg
+			continue
+		}
+
+		abs, err := filepath.Abs(pkg)
+		if err != nil {
+			return "", nil, err
+		}
+
+		if currentGoMod == "" {
+			newPaths[i] = abs
+			continue
+		}
+
+		rel, err := filepath.Rel(filepath.Dir(currentGoMod), abs)
+		if err != nil {
+			return "", nil, err
+		}
+		newPaths[i] = path.Join(currentModPath, filepath.ToSlash(rel))
+	}
+
+	return work, newPaths, nil
 }
 
 func replace(work string, replacedFilesDir string, modulePath string, moduleSrcFilepath string) error {
@@ -222,68 +265,4 @@ func replace(work string, replacedFilesDir string, modulePath string, moduleSrcF
 	}
 
 	return nil
-}
-
-// ResolvePaths resolves package paths so that they can be passed to Go commands at a different directory.
-// A relative package path will be resolved to a path with a module path if go.mod exists,
-// or an absolute path otherwise.
-//
-// The returned value can be passed to Go commands like 'go run' almost anywhere.
-//
-// If pkgs is empty, ResolvePaths returns a module path if go.mod exists,
-// or an absolute path for the current directory otherwise.
-func ResolvePaths(pkgs []string) ([]string, error) {
-	if len(pkgs) == 0 {
-		pkgs = []string{"."}
-	}
-
-	newPkgs := make([]string, len(pkgs))
-	for i, pkg := range pkgs {
-		if !modfile.IsDirectoryPath(pkg) {
-			newPkgs[i] = pkg
-			continue
-		}
-
-		var currentGoMod string
-		{
-			cmd := exec.Command("go", "list", "-m", "-f", "{{.GoMod}}")
-			cmd.Dir = filepath.Dir(pkg)
-			out, err := cmd.Output()
-			if err == nil {
-				// Ignore the error.
-				currentGoMod = strings.TrimSpace(string(out))
-			}
-		}
-
-		abs, err := filepath.Abs(pkg)
-		if err != nil {
-			return nil, err
-		}
-
-		if currentGoMod == "" {
-			newPkgs[i] = abs
-			continue
-		}
-
-		var currentModPath string
-		{
-			cmd := exec.Command("go", "list", "-m", "-f", "{{.Path}}")
-			cmd.Dir = filepath.Dir(pkg)
-			out, err := cmd.Output()
-			if err != nil {
-				if ee, ok := err.(*exec.ExitError); ok {
-					return nil, fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), ee, ee.Stderr)
-				}
-				return nil, err
-			}
-			currentModPath = strings.TrimSpace(string(out))
-		}
-
-		rel, err := filepath.Rel(filepath.Dir(currentGoMod), abs)
-		if err != nil {
-			return nil, err
-		}
-		newPkgs[i] = path.Join(currentModPath, filepath.ToSlash(rel))
-	}
-	return newPkgs, nil
 }

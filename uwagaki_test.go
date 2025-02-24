@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -27,7 +28,7 @@ func TestCreateEnvironment(t *testing.T) {
 			}
 			defer os.Chdir(origWd)
 
-			dir, err := uwagaki.CreateEnvironment([]string{"github.com/hajimehoshi/ebiten/v2/examples/rotate@v2.8.6"}, []uwagaki.ReplaceItem{
+			dir, paths, err := uwagaki.CreateEnvironment([]string{"github.com/hajimehoshi/ebiten/v2/examples/rotate@v2.8.6"}, []uwagaki.ReplaceItem{
 				{
 					Mod:  "github.com/hajimehoshi/ebiten/v2",
 					Path: "additional_file_by_uwagaki.go",
@@ -48,7 +49,12 @@ func AdditionalFuncByUwagaki() {
 			}
 			defer os.RemoveAll(dir)
 
-			if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte(`package main
+			if got, want := paths, []string{"github.com/hajimehoshi/ebiten/v2/examples/rotate@v2.8.6"}; !slices.Equal(got, want) {
+				t.Errorf("got: %v, want: %v", got, want)
+			}
+
+			// Putting main.go in the created directory is not a usual way. This is just for testing.
+			if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(`package main
 
 import (
 	"github.com/hajimehoshi/ebiten/v2"
@@ -61,12 +67,8 @@ func main() {
 				t.Fatal(err)
 			}
 
-			paths, err := uwagaki.ResolvePaths([]string{filepath.Join(tmpDir, "main.go")})
-			if err != nil {
-				t.Fatal(err)
-			}
 			cmd := exec.Command("go", "run")
-			cmd.Args = append(cmd.Args, paths...)
+			cmd.Args = append(cmd.Args, "main.go")
 			cmd.Dir = dir
 			out, err := cmd.Output()
 			if err != nil {
@@ -84,9 +86,7 @@ func main() {
 }
 
 func TestCreateEnvironmentWithDirectoryPath(t *testing.T) {
-	tmpDir := os.TempDir()
-
-	dir, err := uwagaki.CreateEnvironment([]string{"./internal/testpkg"}, []uwagaki.ReplaceItem{
+	dir, paths, err := uwagaki.CreateEnvironment([]string{"./internal/testpkg"}, []uwagaki.ReplaceItem{
 		{
 			Mod:  "github.com/hajimehoshi/uwagaki",
 			Path: "foo.go",
@@ -125,7 +125,12 @@ func Foo2() {
 	}
 	defer os.RemoveAll(dir)
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "main.go"), []byte(`package main
+	if got, want := paths, []string{"github.com/hajimehoshi/uwagaki/internal/testpkg"}; !slices.Equal(got, want) {
+		t.Errorf("got: %v, want: %v", got, want)
+	}
+
+	// Putting main.go in the created directory is not a usual way. This is just for testing.
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(`package main
 
 import (
 	"github.com/hajimehoshi/uwagaki"
@@ -139,12 +144,8 @@ func main() {
 		t.Fatal(err)
 	}
 
-	paths, err := uwagaki.ResolvePaths([]string{filepath.Join(tmpDir, "main.go")})
-	if err != nil {
-		t.Fatal(err)
-	}
 	cmd := exec.Command("go", "run")
-	cmd.Args = append(cmd.Args, paths...)
+	cmd.Args = append(cmd.Args, "main.go")
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
@@ -160,18 +161,18 @@ func main() {
 }
 
 func TestCreateEnvironmentWithDirectoryPath2(t *testing.T) {
-	dir, err := uwagaki.CreateEnvironment(nil, nil)
+	if err := os.Chdir("./internal"); err != nil {
+		t.Fatal(err)
+	}
+
+	dir, paths, err := uwagaki.CreateEnvironment([]string{"./testmainpkg"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(dir)
 
-	if err := os.Chdir("./internal"); err != nil {
-		t.Fatal(err)
-	}
-	paths, err := uwagaki.ResolvePaths([]string{"./testmainpkg"})
-	if err != nil {
-		t.Fatal(err)
+	if got, want := paths, []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"}; !slices.Equal(got, want) {
+		t.Errorf("got: %v, want: %v", got, want)
 	}
 
 	cmd := exec.Command("go", "run")
