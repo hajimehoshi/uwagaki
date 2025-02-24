@@ -105,27 +105,32 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 		}
 		if len(resolvedPath) > 0 {
 			// go get
-			{
-				var buf bytes.Buffer
-				cmd := exec.Command("go", "get")
-				cmd.Args = append(cmd.Args, resolvedPath...)
-				cmd.Stderr = &buf
-				cmd.Dir = work
-				if err := cmd.Run(); err != nil {
-					return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
-				}
+			var buf bytes.Buffer
+			cmd := exec.Command("go", "get")
+			cmd.Args = append(cmd.Args, resolvedPath...)
+			cmd.Stderr = &buf
+			cmd.Dir = work
+			if err := cmd.Run(); err != nil {
+				return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
 			}
 		}
 	}
 
-	replacedModDir := filepath.Join(work, "mod")
-
 	// Redirect the current module to its current source, espcially for directory packge paths.
 	if origModPath != "" {
-		if err := replace(work, replacedModDir, origModPath, filepath.Dir(currentGoMod)); err != nil {
-			return "", err
+		// go mod edit
+		dstRel := filepath.Dir(currentGoMod)
+		var buf bytes.Buffer
+		// TODO: What if the file path includes a space?
+		cmd := exec.Command("go", "mod", "edit", "-replace", origModPath+"="+dstRel)
+		cmd.Stderr = &buf
+		cmd.Dir = work
+		if err := cmd.Run(); err != nil {
+			return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
 		}
 	}
+
+	replacedModDir := filepath.Join(work, "mod")
 
 	modVisited := map[string]struct{}{}
 	for _, r := range replaces {
