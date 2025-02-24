@@ -67,7 +67,7 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 		cmd.Stderr = &buf
 		cmd.Dir = work
 		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("uwagaki: 'go mod init' failed: %w\n%s", err, buf.String())
+			return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
 		}
 	}
 
@@ -79,7 +79,7 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 		cmd.Stderr = &buf
 		cmd.Dir = work
 		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("uwagaki: 'go get %s' failed: %w\n%s", strings.Join(pkgs, " "), err, buf.String())
+			return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
 		}
 	}
 
@@ -95,7 +95,7 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 				cmd.Stderr = &buf
 				cmd.Dir = work
 				if err := cmd.Run(); err != nil {
-					return "", fmt.Errorf("uwagaki: 'go get %s' failed: %w\n%s", r.Mod, err, buf.String())
+					return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
 				}
 			}
 			// go list
@@ -107,7 +107,7 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 				cmd.Dir = work
 				out, err := cmd.Output()
 				if err != nil {
-					return "", fmt.Errorf("uwagaki: 'go get' failed: %w\n%s", err, buf.String())
+					return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
 				}
 				modFilepath = strings.TrimSpace(string(out))
 			}
@@ -137,7 +137,7 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 				cmd.Stderr = &buf
 				cmd.Dir = work
 				if err := cmd.Run(); err != nil {
-					return "", fmt.Errorf("uwagaki: 'go mod edit -replace' failed: %w\n%s", err, buf.String())
+					return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
 				}
 			}
 
