@@ -185,6 +185,10 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 		if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
 			return "", nil, err
 		}
+		// Remove the file once if exists. The file is a hard link and the orignal file must not be affected.
+		if err := os.Remove(dst); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", nil, err
+		}
 		if err := os.WriteFile(dst, r.Content, 0644); err != nil {
 			return "", nil, err
 		}
@@ -245,8 +249,31 @@ func replace(work string, replacedFilesDir string, modulePath string, moduleSrcF
 		return fmt.Errorf("uwagaki: %s is not a directory", dst)
 	}
 	if errors.Is(err, os.ErrNotExist) {
-		// TODO: Use symbolic linkes instead of copying files.
-		if err := os.CopyFS(dst, os.DirFS(moduleSrcFilepath)); err != nil {
+		if err := filepath.WalkDir(moduleSrcFilepath, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			rel, err := filepath.Rel(moduleSrcFilepath, path)
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				if rel == ".git" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			dstPath := filepath.Join(dst, rel)
+			if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+				return err
+			}
+			// Symbolic links don't work for embedding. Use hard links instead.
+			// TODO: Delay the hard link creation until a modified file is written.
+			if err := os.Link(path, dstPath); err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
 			return err
 		}
 	}
