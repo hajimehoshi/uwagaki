@@ -22,10 +22,10 @@ func TestCreateEnvironment(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer os.Chdir(origWd)
 			if err := os.Chdir(wd); err != nil {
 				t.Fatal(err)
 			}
+			defer os.Chdir(origWd)
 
 			dir, err := uwagaki.CreateEnvironment([]string{"github.com/hajimehoshi/ebiten/v2/examples/rotate@v2.8.6"}, []uwagaki.ReplaceItem{
 				{
