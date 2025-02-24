@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -118,15 +119,27 @@ func CreateEnvironment(pkgs []string, replaces []ReplaceItem) (work string, err 
 
 	// Redirect the current module to its current source, espcially for directory packge paths.
 	if origModPath != "" {
+		// go get (to update go.sum)
+		{
+			var buf bytes.Buffer
+			cmd := exec.Command("go", "get", origModPath)
+			cmd.Stderr = &buf
+			cmd.Dir = work
+			if err := cmd.Run(); err != nil {
+				return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
+			}
+		}
 		// go mod edit
-		dstRel := filepath.Dir(currentGoMod)
-		var buf bytes.Buffer
-		// TODO: What if the file path includes a space?
-		cmd := exec.Command("go", "mod", "edit", "-replace", origModPath+"="+dstRel)
-		cmd.Stderr = &buf
-		cmd.Dir = work
-		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
+		{
+			dstRel := filepath.Dir(currentGoMod)
+			var buf bytes.Buffer
+			// TODO: What if the file path includes a space?
+			cmd := exec.Command("go", "mod", "edit", "-replace", origModPath+"="+dstRel)
+			cmd.Stderr = &buf
+			cmd.Dir = work
+			if err := cmd.Run(); err != nil {
+				return "", fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
+			}
 		}
 	}
 
@@ -209,4 +222,72 @@ func replace(work string, replacedFilesDir string, modulePath string, moduleSrcF
 	}
 
 	return nil
+}
+
+// ResolvePaths resolves package paths for the specified environment directory.
+// A relative package path will be resolved to a path with the current module path.
+//
+// If pkgs is empty, ResolvePaths returns the current module path.
+func ResolvePaths(envDir string, pkgs []string) ([]string, error) {
+	var currentGoMod string
+	{
+		cmd := exec.Command("go", "list", "-m", "-f", "{{.GoMod}}")
+		out, err := cmd.Output()
+		if err == nil {
+			// Ignore the error.
+			currentGoMod = strings.TrimSpace(string(out))
+		}
+	}
+
+	// If the current directory doesn't have go.mod, return the original pkgs.
+	if currentGoMod == "" {
+		newPkgs := make([]string, len(pkgs))
+		for i, pkg := range pkgs {
+			if !modfile.IsDirectoryPath(pkg) {
+				newPkgs[i] = pkg
+				continue
+			}
+			abs, err := filepath.Abs(pkg)
+			if err != nil {
+				return nil, err
+			}
+			newPkgs[i] = abs
+		}
+		return newPkgs, nil
+	}
+
+	var currentModPath string
+	{
+		cmd := exec.Command("go", "list", "-m", "-f", "{{.Path}}")
+		out, err := cmd.Output()
+		if err != nil {
+			if ee, ok := err.(*exec.ExitError); ok {
+				return nil, fmt.Errorf("uwagaki: exit status: %d\n%s", ee.ExitCode(), ee.Stderr)
+			}
+			return nil, err
+		}
+		currentModPath = strings.TrimSpace(string(out))
+	}
+
+	if len(pkgs) == 0 {
+		return []string{currentModPath}, nil
+	}
+
+	newPkgs := make([]string, len(pkgs))
+	for i, pkg := range pkgs {
+		if !modfile.IsDirectoryPath(pkg) {
+			newPkgs[i] = pkg
+			continue
+		}
+		abs, err := filepath.Abs(pkg)
+		if err != nil {
+			return nil, err
+		}
+		rel, err := filepath.Rel(filepath.Dir(currentGoMod), abs)
+		if err != nil {
+			return nil, err
+		}
+		newPkgs[i] = path.Join(currentModPath, filepath.ToSlash(rel))
+	}
+	return newPkgs, nil
 }

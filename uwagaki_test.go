@@ -146,3 +146,34 @@ func main() {
 		t.Errorf("got: %s, want: %s", got, want)
 	}
 }
+
+func TestCreateEnvironmentWithDirectoryPath2(t *testing.T) {
+	dir, err := uwagaki.CreateEnvironment(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	if err := os.Chdir("./internal"); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := uwagaki.ResolvePaths(dir, []string{"./testmainpkg"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("go", "run")
+	cmd.Args = append(cmd.Args, paths...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			t.Fatalf("exit status: %d\n%s", ee.ExitCode(), ee.Stderr)
+		}
+		t.Fatal(err)
+	}
+
+	if got, want := strings.TrimSpace(string(out)), "Foo is called"; got != want {
+		t.Errorf("got: %s, want: %s", got, want)
+	}
+}
