@@ -100,7 +100,7 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 	{
 		var nonDirPaths []string
 		for _, path := range paths {
-			// go-get'ing with reolative paths doesn't make sense. Skip them.
+			// go-get'ing with relative paths doesn't make sense. Skip them.
 			if modfile.IsDirectoryPath(path) {
 				continue
 			}
