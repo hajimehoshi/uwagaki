@@ -22,8 +22,16 @@ type testCase struct {
 	replaceItms   []uwagaki.ReplaceItem
 	expectedPaths []string
 
-	tempraryMainGo string
+	tempraryMainGo []byte
 	expectedOutput string
+}
+
+func mustReadFile(path string) []byte {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
 
 var testCases = []testCase{
@@ -34,31 +42,13 @@ var testCases = []testCase{
 		paths: []string{"golang.org/x/text/language@v0.22.0"},
 		replaceItms: []uwagaki.ReplaceItem{
 			{
-				Mod:  "golang.org/x/text",
-				Path: "language/additional_file_by_uwagaki.go",
-				Content: []byte(`package language
-
-import (
-	"fmt"
-)
-
-func AdditionalFuncByUwagaki() {
-	fmt.Println("Hello, Uwagaki!")
-}
-`),
+				Mod:     "golang.org/x/text",
+				Path:    "language/additional_file_by_uwagaki.go",
+				Content: mustReadFile("./testdata/overwrite_external/additional_file_by_uwagaki.go"),
 			},
 		},
-		expectedPaths: []string{"golang.org/x/text/language@v0.22.0"},
-		tempraryMainGo: `package main
-
-import (
-	"golang.org/x/text/language"
-)
-
-func main() {
-	language.AdditionalFuncByUwagaki()
-}
-`,
+		expectedPaths:  []string{"golang.org/x/text/language@v0.22.0"},
+		tempraryMainGo: mustReadFile("./testdata/overwrite_external/main.go"),
 		expectedOutput: "Hello, Uwagaki!",
 	},
 	{
@@ -68,31 +58,13 @@ func main() {
 		paths: []string{"golang.org/x/text/language@v0.22.0"},
 		replaceItms: []uwagaki.ReplaceItem{
 			{
-				Mod:  "golang.org/x/text",
-				Path: "language/additional_file_by_uwagaki.go",
-				Content: []byte(`package language
-
-import (
-	"fmt"
-)
-
-func AdditionalFuncByUwagaki() {
-	fmt.Println("Hello, Uwagaki!")
-}
-`),
+				Mod:     "golang.org/x/text",
+				Path:    "language/additional_file_by_uwagaki.go",
+				Content: mustReadFile("./testdata/overwrite_external/additional_file_by_uwagaki.go"),
 			},
 		},
-		expectedPaths: []string{"golang.org/x/text/language@v0.22.0"},
-		tempraryMainGo: `package main
-
-import (
-	"golang.org/x/text/language"
-)
-
-func main() {
-	language.AdditionalFuncByUwagaki()
-}
-`,
+		expectedPaths:  []string{"golang.org/x/text/language@v0.22.0"},
+		tempraryMainGo: mustReadFile("./testdata/overwrite_external/main.go"),
 		expectedOutput: "Hello, Uwagaki!",
 	},
 	{
@@ -102,49 +74,18 @@ func main() {
 		paths: []string{"./internal/testpkg"},
 		replaceItms: []uwagaki.ReplaceItem{
 			{
-				Mod:  "github.com/hajimehoshi/uwagaki",
-				Path: "foo.go",
-				Content: []byte(`package uwagaki
-
-import (
-	"github.com/hajimehoshi/uwagaki/internal/testpkg"
-)
-
-func Foo() {
-	testpkg.Foo()
-}
-
-func Foo2() {
-	testpkg.Foo2()
-}
-`),
+				Mod:     "github.com/hajimehoshi/uwagaki",
+				Path:    "foo.go",
+				Content: mustReadFile("./testdata/overwrite_relative/uwagaki/foo.go"),
 			},
 			{
-				Mod:  "github.com/hajimehoshi/uwagaki",
-				Path: "internal/testpkg/foo2.go",
-				Content: []byte(`package testpkg
-
-import (
-	"fmt"
-)
-
-func Foo2() {
-	fmt.Println("Foo2 is called")
-}
-`),
+				Mod:     "github.com/hajimehoshi/uwagaki",
+				Path:    "internal/testpkg/foo2.go",
+				Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo2.go"),
 			},
 		},
-		expectedPaths: []string{"github.com/hajimehoshi/uwagaki/internal/testpkg"},
-		tempraryMainGo: `package main
-
-import (
-	"github.com/hajimehoshi/uwagaki"
-)
-
-func main() {
-	uwagaki.Foo()
-	uwagaki.Foo2()
-}`,
+		expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testpkg"},
+		tempraryMainGo: mustReadFile("./testdata/overwrite_relative/main.go"),
 		expectedOutput: "Foo is called\nFoo2 is called",
 	},
 	{
@@ -153,18 +94,9 @@ func main() {
 		paths: []string{"./testmainpkg"},
 		replaceItms: []uwagaki.ReplaceItem{
 			{
-				Mod:  "github.com/hajimehoshi/uwagaki",
-				Path: "internal/testpkg/foo.go",
-				Content: []byte(`package testpkg
-
-import (
-	"fmt"
-)
-
-func Foo() {
-	fmt.Println("Overwritten Foo is called")
-}
-`),
+				Mod:     "github.com/hajimehoshi/uwagaki",
+				Path:    "internal/testpkg/foo.go",
+				Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo.go"),
 			},
 		},
 		expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
@@ -195,8 +127,8 @@ func TestCreateEnvironment(t *testing.T) {
 				t.Errorf("paths: got: %v, want: %v", got, want)
 			}
 
-			if tc.tempraryMainGo != "" {
-				if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(tc.tempraryMainGo), 0644); err != nil {
+			if len(tc.tempraryMainGo) > 0 {
+				if err := os.WriteFile(filepath.Join(dir, "main.go"), tc.tempraryMainGo, 0644); err != nil {
 					t.Fatal(err)
 				}
 
