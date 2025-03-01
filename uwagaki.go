@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -267,9 +268,22 @@ func replace(work string, replacedFilesDir string, modulePath string, moduleSrcF
 			if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
 				return err
 			}
-			// Symbolic links don't work for embedding. Use hard links instead.
-			// TODO: Delay the hard link creation until a modified file is written.
-			if err := os.Link(path, dstPath); err != nil {
+
+			// Copy the file.
+			// Symbolic links don't work for embedding. Hard links don't work between different file systems.
+			out, err := os.Create(dstPath)
+			if err != nil {
+				return err
+			}
+			defer out.Close()
+
+			in, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer in.Close()
+
+			if _, err := io.Copy(out, in); err != nil {
 				return err
 			}
 			return nil

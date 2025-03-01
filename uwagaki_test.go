@@ -14,25 +14,29 @@ import (
 	"github.com/hajimehoshi/uwagaki"
 )
 
-func TestCreateEnvironment(t *testing.T) {
-	tmpDir := os.TempDir()
+type testCase struct {
+	name string
 
-	for _, wd := range []string{".", tmpDir} {
-		t.Run("wd="+wd, func(t *testing.T) {
-			origWd, err := os.Getwd()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Chdir(wd); err != nil {
-				t.Fatal(err)
-			}
-			defer os.Chdir(origWd)
+	wd            string
+	paths         []string
+	replaceItms   []uwagaki.ReplaceItem
+	expectedPaths []string
 
-			dir, paths, err := uwagaki.CreateEnvironment([]string{"github.com/hajimehoshi/ebiten/v2/examples/rotate@v2.8.6"}, []uwagaki.ReplaceItem{
-				{
-					Mod:  "github.com/hajimehoshi/ebiten/v2",
-					Path: "additional_file_by_uwagaki.go",
-					Content: []byte(`package ebiten
+	tempraryMainGo string
+	expectedOutput string
+}
+
+var testCases = []testCase{
+	{
+		name: "overwrite external module",
+
+		wd:    ".",
+		paths: []string{"golang.org/x/text/language@v0.22.0"},
+		replaceItms: []uwagaki.ReplaceItem{
+			{
+				Mod:  "golang.org/x/text",
+				Path: "language/additional_file_by_uwagaki.go",
+				Content: []byte(`package language
 
 import (
 	"fmt"
@@ -42,55 +46,65 @@ func AdditionalFuncByUwagaki() {
 	fmt.Println("Hello, Uwagaki!")
 }
 `),
-				},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer os.RemoveAll(dir)
-
-			if got, want := paths, []string{"github.com/hajimehoshi/ebiten/v2/examples/rotate@v2.8.6"}; !slices.Equal(got, want) {
-				t.Errorf("got: %v, want: %v", got, want)
-			}
-
-			// Putting main.go in the created directory is not a usual way. This is just for testing.
-			if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(`package main
+			},
+		},
+		expectedPaths: []string{"golang.org/x/text/language@v0.22.0"},
+		tempraryMainGo: `package main
 
 import (
-	"github.com/hajimehoshi/ebiten/v2"
+	"golang.org/x/text/language"
 )
 
 func main() {
-	ebiten.AdditionalFuncByUwagaki()
+	language.AdditionalFuncByUwagaki()
 }
-`), 0644); err != nil {
-				t.Fatal(err)
-			}
+`,
+		expectedOutput: "Hello, Uwagaki!",
+	},
+	{
+		name: "overwrite external module at temporary directory",
 
-			cmd := exec.Command("go", "run")
-			cmd.Args = append(cmd.Args, "main.go")
-			cmd.Dir = dir
-			out, err := cmd.Output()
-			if err != nil {
-				if ee, ok := err.(*exec.ExitError); ok {
-					t.Fatalf("exit status: %d\n%s", ee.ExitCode(), ee.Stderr)
-				}
-				t.Fatal(err)
-			}
+		wd:    os.TempDir(),
+		paths: []string{"golang.org/x/text/language@v0.22.0"},
+		replaceItms: []uwagaki.ReplaceItem{
+			{
+				Mod:  "golang.org/x/text",
+				Path: "language/additional_file_by_uwagaki.go",
+				Content: []byte(`package language
 
-			if got, want := strings.TrimSpace(string(out)), "Hello, Uwagaki!"; got != want {
-				t.Errorf("got: %s, want: %s", got, want)
-			}
-		})
-	}
+import (
+	"fmt"
+)
+
+func AdditionalFuncByUwagaki() {
+	fmt.Println("Hello, Uwagaki!")
 }
+`),
+			},
+		},
+		expectedPaths: []string{"golang.org/x/text/language@v0.22.0"},
+		tempraryMainGo: `package main
 
-func TestCreateEnvironmentWithDirectoryPath(t *testing.T) {
-	dir, paths, err := uwagaki.CreateEnvironment([]string{"./internal/testpkg"}, []uwagaki.ReplaceItem{
-		{
-			Mod:  "github.com/hajimehoshi/uwagaki",
-			Path: "foo.go",
-			Content: []byte(`package uwagaki
+import (
+	"golang.org/x/text/language"
+)
+
+func main() {
+	language.AdditionalFuncByUwagaki()
+}
+`,
+		expectedOutput: "Hello, Uwagaki!",
+	},
+	{
+		name: "overwrite relative path module",
+
+		wd:    ".",
+		paths: []string{"./internal/testpkg"},
+		replaceItms: []uwagaki.ReplaceItem{
+			{
+				Mod:  "github.com/hajimehoshi/uwagaki",
+				Path: "foo.go",
+				Content: []byte(`package uwagaki
 
 import (
 	"github.com/hajimehoshi/uwagaki/internal/testpkg"
@@ -104,11 +118,11 @@ func Foo2() {
 	testpkg.Foo2()
 }
 `),
-		},
-		{
-			Mod:  "github.com/hajimehoshi/uwagaki",
-			Path: "internal/testpkg/foo2.go",
-			Content: []byte(`package testpkg
+			},
+			{
+				Mod:  "github.com/hajimehoshi/uwagaki",
+				Path: "internal/testpkg/foo2.go",
+				Content: []byte(`package testpkg
 
 import (
 	"fmt"
@@ -118,19 +132,10 @@ func Foo2() {
 	fmt.Println("Foo2 is called")
 }
 `),
+			},
 		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
-
-	if got, want := paths, []string{"github.com/hajimehoshi/uwagaki/internal/testpkg"}; !slices.Equal(got, want) {
-		t.Errorf("got: %v, want: %v", got, want)
-	}
-
-	// Putting main.go in the created directory is not a usual way. This is just for testing.
-	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(`package main
+		expectedPaths: []string{"github.com/hajimehoshi/uwagaki/internal/testpkg"},
+		tempraryMainGo: `package main
 
 import (
 	"github.com/hajimehoshi/uwagaki"
@@ -139,37 +144,18 @@ import (
 func main() {
 	uwagaki.Foo()
 	uwagaki.Foo2()
-}
-`), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	cmd := exec.Command("go", "run")
-	cmd.Args = append(cmd.Args, "main.go")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
-			t.Fatalf("exit status: %d\n%s", ee.ExitCode(), ee.Stderr)
-		}
-		t.Fatal(err)
-	}
-
-	if got, want := strings.TrimSpace(string(out)), "Foo is called\nFoo2 is called"; got != want {
-		t.Errorf("got: %s, want: %s", got, want)
-	}
-}
-
-func TestCreateEnvironmentWithDirectoryPathWithRelativePath(t *testing.T) {
-	if err := os.Chdir("./internal"); err != nil {
-		t.Fatal(err)
-	}
-
-	dir, paths, err := uwagaki.CreateEnvironment([]string{"./testmainpkg"}, []uwagaki.ReplaceItem{
-		{
-			Mod:  "github.com/hajimehoshi/uwagaki",
-			Path: "internal/testpkg/foo.go",
-			Content: []byte(`package testpkg
+}`,
+		expectedOutput: "Foo is called\nFoo2 is called",
+	},
+	{
+		name:  "overwrite relative path main module",
+		wd:    "./internal",
+		paths: []string{"./testmainpkg"},
+		replaceItms: []uwagaki.ReplaceItem{
+			{
+				Mod:  "github.com/hajimehoshi/uwagaki",
+				Path: "internal/testpkg/foo.go",
+				Content: []byte(`package testpkg
 
 import (
 	"fmt"
@@ -179,29 +165,71 @@ func Foo() {
 	fmt.Println("Overwritten Foo is called")
 }
 `),
+			},
 		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+		expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
+		expectedOutput: "Overwritten Foo is called",
+	},
+}
 
-	if got, want := paths, []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"}; !slices.Equal(got, want) {
-		t.Errorf("got: %v, want: %v", got, want)
-	}
+func TestCreateEnvironment(t *testing.T) {
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// TODO: Use t.Chdir after Go 1.24.
+			origWd, err := os.Getwd()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chdir(tc.wd); err != nil {
+				t.Fatal(err)
+			}
+			defer os.Chdir(origWd)
 
-	cmd := exec.Command("go", "run")
-	cmd.Args = append(cmd.Args, paths...)
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
-			t.Fatalf("exit status: %d\n%s", ee.ExitCode(), ee.Stderr)
-		}
-		t.Fatal(err)
-	}
+			dir, paths, err := uwagaki.CreateEnvironment(tc.paths, tc.replaceItms)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.RemoveAll(dir)
 
-	if got, want := strings.TrimSpace(string(out)), "Overwritten Foo is called"; got != want {
-		t.Errorf("got: %s, want: %s", got, want)
+			if got, want := paths, tc.expectedPaths; !slices.Equal(got, want) {
+				t.Errorf("paths: got: %v, want: %v", got, want)
+			}
+
+			if tc.tempraryMainGo != "" {
+				if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(tc.tempraryMainGo), 0644); err != nil {
+					t.Fatal(err)
+				}
+
+				cmd := exec.Command("go", "run")
+				cmd.Args = append(cmd.Args, "main.go")
+				cmd.Dir = dir
+				out, err := cmd.Output()
+				if err != nil {
+					if ee, ok := err.(*exec.ExitError); ok {
+						t.Fatalf("exit status: %d\n%s", ee.ExitCode(), ee.Stderr)
+					}
+					t.Fatal(err)
+				}
+
+				if got, want := strings.TrimSpace(string(out)), tc.expectedOutput; got != want {
+					t.Errorf("output: got: %s, want: %s", got, want)
+				}
+			} else {
+				cmd := exec.Command("go", "run")
+				cmd.Args = append(cmd.Args, paths...)
+				cmd.Dir = dir
+				out, err := cmd.Output()
+				if err != nil {
+					if ee, ok := err.(*exec.ExitError); ok {
+						t.Fatalf("exit status: %d\n%s", ee.ExitCode(), ee.Stderr)
+					}
+					t.Fatal(err)
+				}
+
+				if got, want := strings.TrimSpace(string(out)), "Overwritten Foo is called"; got != want {
+					t.Errorf("got: %s, want: %s", got, want)
+				}
+			}
+		})
 	}
 }
