@@ -109,12 +109,22 @@ func TestCreateEnvironment(t *testing.T) {
 		if err := cmd.Run(); err != nil {
 			t.Fatal(err)
 		}
+	}
+	{
+		cmd := exec.Command("go", "get", "golang.org/x/sync@v0.11.0")
+		cmd.Stderr = os.Stderr
+		cmd.Dir = tmpWithLocalGoMod
+		if err := cmd.Run(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	{
 		if err := os.WriteFile(filepath.Join(tmpWithLocalGoMod, "main.go"), []byte(`package main
 
-import "fmt"
+import "golang.org/x/sync"
 
 func main() {
-	fmt.Println("Package foo's main is called")
+	sync.AdditionalFuncByUwagaki()
 }
 `), 0644); err != nil {
 			t.Fatal(err)
@@ -251,20 +261,32 @@ func Foo() {
 			expectedOutput: "Replaced Foo is called",
 		},
 		{
-			name:           "local go.mod with absolute path",
-			wd:             tmpWithLocalGoMod,
-			paths:          []string{"foo"},
-			replaceItms:    nil,
+			name:  "local go.mod with absolute path",
+			wd:    tmpWithLocalGoMod,
+			paths: []string{"foo"},
+			replaceItms: []uwagaki.ReplaceItem{
+				{
+					Mod:     "golang.org/x/sync",
+					Path:    "additional_file_by_uwagaki.go",
+					Content: mustReadFile("./testdata/sync/additional_file_by_uwagaki.go"),
+				},
+			},
 			expectedPaths:  []string{"foo"},
-			expectedOutput: "Package foo's main is called",
+			expectedOutput: "Hello, Uwagaki (sync)!",
 		},
 		{
-			name:           "local go.mod with relative path",
-			wd:             tmpWithLocalGoMod,
-			paths:          []string{"."},
-			replaceItms:    nil,
+			name:  "local go.mod with relative path",
+			wd:    tmpWithLocalGoMod,
+			paths: []string{"."},
+			replaceItms: []uwagaki.ReplaceItem{
+				{
+					Mod:     "golang.org/x/sync",
+					Path:    "additional_file_by_uwagaki.go",
+					Content: mustReadFile("./testdata/sync/additional_file_by_uwagaki.go"),
+				},
+			},
 			expectedPaths:  []string{"foo"},
-			expectedOutput: "Package foo's main is called",
+			expectedOutput: "Hello, Uwagaki (sync)!",
 		},
 		{
 			name:  "real go.mod with absolute path",
