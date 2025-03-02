@@ -151,38 +151,28 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 	// Redirect the current module to its current source, espcially for directory packge paths.
 	if origModPath != "" {
 		// A local module might not be go-gettable. Rewrite go.mod to add a dummy require.
-		{
-			goModContent, err := os.ReadFile(filepath.Join(work, "go.mod"))
-			if err != nil {
-				return "", nil, err
-			}
-			mod, err := modfile.Parse("go.mod", goModContent, nil)
-			if err != nil {
-				return "", nil, err
-			}
-			// The version number is a dummy. This package will be redirected by the replace directive so the version doesn't matter.
-			if err := mod.AddRequire(origModPath, "v0.0.0"); err != nil {
-				return "", nil, err
-			}
-			newGoModContent, err := mod.Format()
-			if err != nil {
-				return "", nil, err
-			}
-			if err := os.WriteFile(filepath.Join(work, "go.mod"), newGoModContent, 0644); err != nil {
-				return "", nil, err
-			}
+		goModContent, err := os.ReadFile(filepath.Join(work, "go.mod"))
+		if err != nil {
+			return "", nil, err
 		}
-		// go mod edit
-		{
-			dstRel := filepath.Dir(currentGoMod)
-			var buf bytes.Buffer
-			// TODO: What if the file path includes a space?
-			cmd := exec.Command("go", "mod", "edit", "-replace", origModPath+"="+dstRel)
-			cmd.Stderr = &buf
-			cmd.Dir = work
-			if err := cmd.Run(); err != nil {
-				return "", nil, fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
-			}
+		mod, err := modfile.Parse("go.mod", goModContent, nil)
+		if err != nil {
+			return "", nil, err
+		}
+		// The version number is a dummy. This package will be redirected by the replace directive so the version doesn't matter.
+		if err := mod.AddRequire(origModPath, "v0.0.0"); err != nil {
+			return "", nil, err
+		}
+		// Add a replace directive.
+		if err := mod.AddReplace(origModPath, "v0.0.0", filepath.Dir(currentGoMod), ""); err != nil {
+			return "", nil, err
+		}
+		newGoModContent, err := mod.Format()
+		if err != nil {
+			return "", nil, err
+		}
+		if err := os.WriteFile(filepath.Join(work, "go.mod"), newGoModContent, 0644); err != nil {
+			return "", nil, err
 		}
 	}
 
