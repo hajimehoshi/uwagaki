@@ -63,7 +63,6 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 
 	randomModuleName := "uwagaki_" + time.Now().UTC().Format("20060102150405")
 
-	var origModPath string
 	if currentGoMod != "" {
 		// Copy the current go.mod and go.sum to the work directory, but with modifying the module name.
 		content, err := os.ReadFile(currentGoMod)
@@ -74,7 +73,7 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 		if err != nil {
 			return "", nil, err
 		}
-		origModPath = mod.Module.Mod.Path
+		origModPath := mod.Module.Mod.Path
 		if err := mod.AddModuleStmt(randomModuleName); err != nil {
 			return "", nil, err
 		}
@@ -92,6 +91,16 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 				continue
 			}
 			mod.AddReplace(r.Old.Path, r.Old.Version, filepath.Join(dir, r.New.Path), r.New.Version)
+		}
+
+		// The version number is a dummy. This package will be redirected by the replace directive so the version doesn't matter.
+		if err := mod.AddRequire(origModPath, "v0.0.0"); err != nil {
+			return "", nil, err
+		}
+
+		// Add a replace directive.
+		if err := mod.AddReplace(origModPath, "v0.0.0", filepath.Dir(currentGoMod), ""); err != nil {
+			return "", nil, err
 		}
 
 		// Write the new go.mod.
@@ -122,34 +131,6 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 		cmd.Dir = work
 		if err := cmd.Run(); err != nil {
 			return "", nil, fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
-		}
-	}
-
-	// Redirect the current module to its current source, espcially for directory packge paths.
-	if origModPath != "" {
-		// A local module might not be go-gettable. Rewrite go.mod to add a dummy require.
-		goModContent, err := os.ReadFile(filepath.Join(work, "go.mod"))
-		if err != nil {
-			return "", nil, err
-		}
-		mod, err := modfile.Parse("go.mod", goModContent, nil)
-		if err != nil {
-			return "", nil, err
-		}
-		// The version number is a dummy. This package will be redirected by the replace directive so the version doesn't matter.
-		if err := mod.AddRequire(origModPath, "v0.0.0"); err != nil {
-			return "", nil, err
-		}
-		// Add a replace directive.
-		if err := mod.AddReplace(origModPath, "v0.0.0", filepath.Dir(currentGoMod), ""); err != nil {
-			return "", nil, err
-		}
-		newGoModContent, err := mod.Format()
-		if err != nil {
-			return "", nil, err
-		}
-		if err := os.WriteFile(filepath.Join(work, "go.mod"), newGoModContent, 0644); err != nil {
-			return "", nil, err
 		}
 	}
 
