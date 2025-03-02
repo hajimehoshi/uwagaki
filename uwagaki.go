@@ -125,28 +125,6 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 		}
 	}
 
-	// go get
-	{
-		var nonDirPaths []string
-		for _, path := range paths {
-			// go-get'ing with relative paths doesn't make sense. Skip them.
-			if modfile.IsDirectoryPath(path) {
-				continue
-			}
-			nonDirPaths = append(nonDirPaths, path)
-		}
-		for _, path := range nonDirPaths {
-			// go get
-			var buf bytes.Buffer
-			cmd := exec.Command("go", "get")
-			cmd.Args = append(cmd.Args, path)
-			cmd.Stderr = &buf
-			cmd.Dir = work
-			// go get might fail e.g. if the path is a local module.
-			_ = cmd.Run()
-		}
-	}
-
 	// Redirect the current module to its current source, espcially for directory packge paths.
 	if origModPath != "" {
 		// A local module might not be go-gettable. Rewrite go.mod to add a dummy require.
