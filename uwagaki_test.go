@@ -23,8 +23,8 @@ type testCase struct {
 	replaceItms   []uwagaki.ReplaceItem
 	expectedPaths []string
 
-	tempraryMainGo []byte
-	expectedOutput string
+	temporaryMainGo []byte
+	expectedOutput  string
 }
 
 func mustReadFile(path string) []byte {
@@ -178,9 +178,9 @@ func Foo() {
 					Content: mustReadFile("./testdata/overwrite_external/additional_file_by_uwagaki.go"),
 				},
 			},
-			expectedPaths:  []string{"golang.org/x/text/language@v0.22.0"},
-			tempraryMainGo: mustReadFile("./testdata/overwrite_external/main.go"),
-			expectedOutput: "Hello, Uwagaki!",
+			expectedPaths:   []string{"golang.org/x/text/language@v0.22.0"},
+			temporaryMainGo: mustReadFile("./testdata/overwrite_external/main.go"),
+			expectedOutput:  "Hello, Uwagaki!",
 		},
 		{
 			name: "overwrite external module at temporary directory",
@@ -194,9 +194,9 @@ func Foo() {
 					Content: mustReadFile("./testdata/overwrite_external/additional_file_by_uwagaki.go"),
 				},
 			},
-			expectedPaths:  []string{"golang.org/x/text/language@v0.22.0"},
-			tempraryMainGo: mustReadFile("./testdata/overwrite_external/main.go"),
-			expectedOutput: "Hello, Uwagaki!",
+			expectedPaths:   []string{"golang.org/x/text/language@v0.22.0"},
+			temporaryMainGo: mustReadFile("./testdata/overwrite_external/main.go"),
+			expectedOutput:  "Hello, Uwagaki!",
 		},
 		{
 			name: "overwrite relative path module",
@@ -215,9 +215,9 @@ func Foo() {
 					Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo2.go"),
 				},
 			},
-			expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testpkg"},
-			tempraryMainGo: mustReadFile("./testdata/overwrite_relative/main.go"),
-			expectedOutput: "Foo is called\nFoo2 is called",
+			expectedPaths:   []string{"github.com/hajimehoshi/uwagaki/internal/testpkg"},
+			temporaryMainGo: mustReadFile("./testdata/overwrite_relative/main.go"),
+			expectedOutput:  "Foo is called\nFoo2 is called",
 		},
 		{
 			name:  "overwrite relative path main module",
@@ -273,8 +273,8 @@ func Foo() {
 				t.Errorf("paths: got: %v, want: %v", got, want)
 			}
 
-			if len(tc.tempraryMainGo) > 0 {
-				if err := os.WriteFile(filepath.Join(dir, "main.go"), tc.tempraryMainGo, 0644); err != nil {
+			if len(tc.temporaryMainGo) > 0 {
+				if err := os.WriteFile(filepath.Join(dir, "main.go"), tc.temporaryMainGo, 0644); err != nil {
 					t.Fatal(err)
 				}
 
