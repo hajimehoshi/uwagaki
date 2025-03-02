@@ -4,6 +4,7 @@
 package uwagaki_test
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"os/exec"
@@ -156,11 +157,12 @@ func Foo() {
 	}
 
 	{
-		cmd := exec.Command("git", "clone", "--depth=1", "https://go.googlesource.com/tools")
-		cmd.Stderr = os.Stderr
+		var buf bytes.Buffer
+		cmd := exec.Command("git", "clone", "--depth=1", "--branch=v0.30.0", "https://go.googlesource.com/tools")
+		cmd.Stderr = &buf
 		cmd.Dir = tmpWithRealGoMod
 		if err := cmd.Run(); err != nil {
-			t.Fatal(err)
+			t.Fatalf("git clone failed: %v\n%s", err, buf.String())
 		}
 
 		// Modify cmd/stringer/main.go for testing.
