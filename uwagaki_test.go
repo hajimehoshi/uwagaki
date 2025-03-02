@@ -243,12 +243,20 @@ func Foo() {
 			expectedOutput: "Overwritten Foo is called",
 		},
 		{
-			name:           "local go.mod with absolute path",
+			name:           "local go.mod with external module",
 			wd:             tmpWithLocalGoMod,
 			paths:          []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
 			replaceItms:    nil,
 			expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
 			expectedOutput: "Replaced Foo is called",
+		},
+		{
+			name:           "local go.mod with absolute path",
+			wd:             tmpWithLocalGoMod,
+			paths:          []string{"foo"},
+			replaceItms:    nil,
+			expectedPaths:  []string{"foo"},
+			expectedOutput: "Package foo's main is called",
 		},
 		{
 			name:           "local go.mod with relative path",

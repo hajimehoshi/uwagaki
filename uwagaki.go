@@ -135,16 +135,15 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 			}
 			nonDirPaths = append(nonDirPaths, path)
 		}
-		if len(nonDirPaths) > 0 {
+		for _, path := range nonDirPaths {
 			// go get
 			var buf bytes.Buffer
 			cmd := exec.Command("go", "get")
-			cmd.Args = append(cmd.Args, nonDirPaths...)
+			cmd.Args = append(cmd.Args, path)
 			cmd.Stderr = &buf
 			cmd.Dir = work
-			if err := cmd.Run(); err != nil {
-				return "", nil, fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
-			}
+			// go get might fail e.g. if the path is a local module.
+			_ = cmd.Run()
 		}
 	}
 
