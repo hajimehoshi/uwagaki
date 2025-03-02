@@ -186,12 +186,12 @@ func Foo() {
 				{
 					Mod:     "golang.org/x/text",
 					Path:    "language/additional_file_by_uwagaki.go",
-					Content: mustReadFile("./testdata/overwrite_external/additional_file_by_uwagaki.go"),
+					Content: mustReadFile("./testdata/language/additional_file_by_uwagaki.go"),
 				},
 			},
 			expectedPaths:   []string{"golang.org/x/text/language@v0.22.0"},
 			temporaryMainGo: mustReadFile("./testdata/overwrite_external/main.go"),
-			expectedOutput:  "Hello, Uwagaki!",
+			expectedOutput:  "Hello, Uwagaki (language)!",
 		},
 		{
 			name:  "overwrite external module at temporary directory",
@@ -201,12 +201,12 @@ func Foo() {
 				{
 					Mod:     "golang.org/x/text",
 					Path:    "language/additional_file_by_uwagaki.go",
-					Content: mustReadFile("./testdata/overwrite_external/additional_file_by_uwagaki.go"),
+					Content: mustReadFile("./testdata/language/additional_file_by_uwagaki.go"),
 				},
 			},
 			expectedPaths:   []string{"golang.org/x/text/language@v0.22.0"},
 			temporaryMainGo: mustReadFile("./testdata/overwrite_external/main.go"),
-			expectedOutput:  "Hello, Uwagaki!",
+			expectedOutput:  "Hello, Uwagaki (language)!",
 		},
 		{
 			name:  "overwrite relative path module",
@@ -267,20 +267,32 @@ func Foo() {
 			expectedOutput: "Package foo's main is called",
 		},
 		{
-			name:           "real go.mod with absolute path",
-			wd:             filepath.Join(tmpWithRealGoMod, "tools"),
-			paths:          []string{"golang.org/x/tools/cmd/stringer"},
-			replaceItms:    nil,
+			name:  "real go.mod with absolute path",
+			wd:    filepath.Join(tmpWithRealGoMod, "tools"),
+			paths: []string{"golang.org/x/tools/cmd/stringer"},
+			replaceItms: []uwagaki.ReplaceItem{
+				{
+					Mod:     "golang.org/x/sync",
+					Path:    "additional_file_by_uwagaki.go",
+					Content: mustReadFile("./testdata/sync/additional_file_by_uwagaki.go"),
+				},
+			},
 			expectedPaths:  []string{"golang.org/x/tools/cmd/stringer"},
-			expectedOutput: "This is a new stringer",
+			expectedOutput: "Hello, Uwagaki (sync)!",
 		},
 		{
-			name:           "real go.mod with relative path",
-			wd:             filepath.Join(tmpWithRealGoMod, "tools"),
-			paths:          []string{"./cmd/stringer"},
-			replaceItms:    nil,
+			name:  "real go.mod with relative path",
+			wd:    filepath.Join(tmpWithRealGoMod, "tools"),
+			paths: []string{"./cmd/stringer"},
+			replaceItms: []uwagaki.ReplaceItem{
+				{
+					Mod:     "golang.org/x/sync",
+					Path:    "additional_file_by_uwagaki.go",
+					Content: mustReadFile("./testdata/sync/additional_file_by_uwagaki.go"),
+				},
+			},
 			expectedPaths:  []string{"golang.org/x/tools/cmd/stringer"},
-			expectedOutput: "This is a new stringer",
+			expectedOutput: "Hello, Uwagaki (sync)!",
 		},
 	}
 

@@ -3,8 +3,8 @@
 
 package main
 
-import "fmt"
+import "golang.org/x/sync"
 
 func main() {
-	fmt.Println("This is a new stringer")
+	sync.AdditionalFuncByUwagaki()
 }

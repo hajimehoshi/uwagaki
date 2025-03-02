@@ -8,5 +8,5 @@ import (
 )
 
 func AdditionalFuncByUwagaki() {
-	fmt.Println("Hello, Uwagaki!")
+	fmt.Println("Hello, Uwagaki (language)!")
 }

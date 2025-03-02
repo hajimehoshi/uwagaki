@@ -99,7 +99,7 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 		}
 
 		// Add a replace directive.
-		if err := mod.AddReplace(origModPath, "v0.0.0", filepath.Dir(currentGoMod), ""); err != nil {
+		if err := mod.AddReplace(origModPath, "", filepath.Dir(currentGoMod), ""); err != nil {
 			return "", nil, err
 		}
 
