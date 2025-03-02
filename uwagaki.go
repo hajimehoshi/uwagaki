@@ -63,21 +63,32 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 
 	randomModuleName := "uwagaki_" + time.Now().UTC().Format("20060102150405")
 
-	var origModPath string
 	if currentGoMod != "" {
 		// Copy the current go.mod and go.sum to the work directory, but with modifying the module name.
 		content, err := os.ReadFile(currentGoMod)
 		if err != nil {
 			return "", nil, err
 		}
-		mod, err := modfile.ParseLax(currentGoMod, content, nil)
+		mod, err := modfile.Parse(currentGoMod, content, nil)
 		if err != nil {
 			return "", nil, err
 		}
-		origModPath = mod.Module.Mod.Path
-		// TODO: Copy mod.Replace.
 		if err := mod.AddModuleStmt(randomModuleName); err != nil {
 			return "", nil, err
+		}
+		// Fix the 'replace' paths.
+		dir := filepath.Dir(currentGoMod)
+		// Copy the slice as AddReplace might affect the original slice.
+		replaces := make([]*modfile.Replace, len(mod.Replace))
+		copy(replaces, mod.Replace)
+		for _, r := range replaces {
+			if !modfile.IsDirectoryPath(r.New.Path) {
+				continue
+			}
+			if filepath.IsAbs(r.New.Path) {
+				continue
+			}
+			mod.AddReplace(r.Old.Path, r.Old.Version, filepath.Join(dir, r.New.Path), r.New.Version)
 		}
 		content2, err := mod.Format()
 		if err != nil {
@@ -112,32 +123,6 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 			var buf bytes.Buffer
 			cmd := exec.Command("go", "get")
 			cmd.Args = append(cmd.Args, nonDirPaths...)
-			cmd.Stderr = &buf
-			cmd.Dir = work
-			if err := cmd.Run(); err != nil {
-				return "", nil, fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
-			}
-		}
-	}
-
-	// Redirect the current module to its current source, espcially for directory packge paths.
-	if origModPath != "" {
-		// go get (to update go.sum)
-		{
-			var buf bytes.Buffer
-			cmd := exec.Command("go", "get", origModPath)
-			cmd.Stderr = &buf
-			cmd.Dir = work
-			if err := cmd.Run(); err != nil {
-				return "", nil, fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
-			}
-		}
-		// go mod edit
-		{
-			dstRel := filepath.Dir(currentGoMod)
-			var buf bytes.Buffer
-			// TODO: What if the file path includes a space?
-			cmd := exec.Command("go", "mod", "edit", "-replace", origModPath+"="+dstRel)
 			cmd.Stderr = &buf
 			cmd.Dir = work
 			if err := cmd.Run(); err != nil {

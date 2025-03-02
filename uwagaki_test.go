@@ -4,6 +4,7 @@
 package uwagaki_test
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,77 +35,188 @@ func mustReadFile(path string) []byte {
 	return b
 }
 
-var testCases = []testCase{
-	{
-		name: "overwrite external module",
+func copyFSWithoutDotGit(dst, src string) error {
+	if err := os.MkdirAll(dst, 0755); err != nil {
+		return err
+	}
+	if err := filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if rel == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 
-		wd:    ".",
-		paths: []string{"golang.org/x/text/language@v0.22.0"},
-		replaceItms: []uwagaki.ReplaceItem{
-			{
-				Mod:     "golang.org/x/text",
-				Path:    "language/additional_file_by_uwagaki.go",
-				Content: mustReadFile("./testdata/overwrite_external/additional_file_by_uwagaki.go"),
-			},
-		},
-		expectedPaths:  []string{"golang.org/x/text/language@v0.22.0"},
-		tempraryMainGo: mustReadFile("./testdata/overwrite_external/main.go"),
-		expectedOutput: "Hello, Uwagaki!",
-	},
-	{
-		name: "overwrite external module at temporary directory",
+		dstPath := filepath.Join(dst, rel)
+		if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+			return err
+		}
 
-		wd:    os.TempDir(),
-		paths: []string{"golang.org/x/text/language@v0.22.0"},
-		replaceItms: []uwagaki.ReplaceItem{
-			{
-				Mod:     "golang.org/x/text",
-				Path:    "language/additional_file_by_uwagaki.go",
-				Content: mustReadFile("./testdata/overwrite_external/additional_file_by_uwagaki.go"),
-			},
-		},
-		expectedPaths:  []string{"golang.org/x/text/language@v0.22.0"},
-		tempraryMainGo: mustReadFile("./testdata/overwrite_external/main.go"),
-		expectedOutput: "Hello, Uwagaki!",
-	},
-	{
-		name: "overwrite relative path module",
+		// Copy the file.
+		out, err := os.Create(dstPath)
+		if err != nil {
+			return err
+		}
+		defer out.Close()
 
-		wd:    ".",
-		paths: []string{"./internal/testpkg"},
-		replaceItms: []uwagaki.ReplaceItem{
-			{
-				Mod:     "github.com/hajimehoshi/uwagaki",
-				Path:    "foo.go",
-				Content: mustReadFile("./testdata/overwrite_relative/uwagaki/foo.go"),
-			},
-			{
-				Mod:     "github.com/hajimehoshi/uwagaki",
-				Path:    "internal/testpkg/foo2.go",
-				Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo2.go"),
-			},
-		},
-		expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testpkg"},
-		tempraryMainGo: mustReadFile("./testdata/overwrite_relative/main.go"),
-		expectedOutput: "Foo is called\nFoo2 is called",
-	},
-	{
-		name:  "overwrite relative path main module",
-		wd:    "./internal",
-		paths: []string{"./testmainpkg"},
-		replaceItms: []uwagaki.ReplaceItem{
-			{
-				Mod:     "github.com/hajimehoshi/uwagaki",
-				Path:    "internal/testpkg/foo.go",
-				Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo.go"),
-			},
-		},
-		expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
-		expectedOutput: "Overwritten Foo is called",
-	},
+		in, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer in.Close()
+
+		if _, err := io.Copy(out, in); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 func TestCreateEnvironment(t *testing.T) {
+	tmp, err := os.MkdirTemp("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmp)
+
+	tmpWithGoMod, err := os.MkdirTemp("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpWithGoMod)
+
+	{
+		cmd := exec.Command("go", "mod", "init", "foo")
+		cmd.Stderr = os.Stderr
+		cmd.Dir = tmpWithGoMod
+		if err := cmd.Run(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	{
+		cmd := exec.Command("go", "get", "github.com/hajimehoshi/uwagaki")
+		cmd.Stderr = os.Stderr
+		cmd.Dir = tmpWithGoMod
+		if err := cmd.Run(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Prepare replaced module.
+	{
+		wd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		replaced := filepath.Join(tmpWithGoMod, "_uwagaki")
+		if err := copyFSWithoutDotGit(replaced, wd); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(replaced, "internal", "testpkg", "foo.go"), []byte(`package testpkg
+
+import "fmt"
+
+func Foo() {
+	fmt.Println("Replaced Foo is called")
+}
+`), 0644); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("go", "mod", "edit", "-replace=github.com/hajimehoshi/uwagaki=."+string(filepath.Separator)+"_uwagaki")
+		cmd.Stderr = os.Stderr
+		cmd.Dir = tmpWithGoMod
+		if err := cmd.Run(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var testCases = []testCase{
+		{
+			name: "overwrite external module",
+
+			wd:    ".",
+			paths: []string{"golang.org/x/text/language@v0.22.0"},
+			replaceItms: []uwagaki.ReplaceItem{
+				{
+					Mod:     "golang.org/x/text",
+					Path:    "language/additional_file_by_uwagaki.go",
+					Content: mustReadFile("./testdata/overwrite_external/additional_file_by_uwagaki.go"),
+				},
+			},
+			expectedPaths:  []string{"golang.org/x/text/language@v0.22.0"},
+			tempraryMainGo: mustReadFile("./testdata/overwrite_external/main.go"),
+			expectedOutput: "Hello, Uwagaki!",
+		},
+		{
+			name: "overwrite external module at temporary directory",
+
+			wd:    tmp,
+			paths: []string{"golang.org/x/text/language@v0.22.0"},
+			replaceItms: []uwagaki.ReplaceItem{
+				{
+					Mod:     "golang.org/x/text",
+					Path:    "language/additional_file_by_uwagaki.go",
+					Content: mustReadFile("./testdata/overwrite_external/additional_file_by_uwagaki.go"),
+				},
+			},
+			expectedPaths:  []string{"golang.org/x/text/language@v0.22.0"},
+			tempraryMainGo: mustReadFile("./testdata/overwrite_external/main.go"),
+			expectedOutput: "Hello, Uwagaki!",
+		},
+		{
+			name: "overwrite relative path module",
+
+			wd:    ".",
+			paths: []string{"./internal/testpkg"},
+			replaceItms: []uwagaki.ReplaceItem{
+				{
+					Mod:     "github.com/hajimehoshi/uwagaki",
+					Path:    "foo.go",
+					Content: mustReadFile("./testdata/overwrite_relative/uwagaki/foo.go"),
+				},
+				{
+					Mod:     "github.com/hajimehoshi/uwagaki",
+					Path:    "internal/testpkg/foo2.go",
+					Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo2.go"),
+				},
+			},
+			expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testpkg"},
+			tempraryMainGo: mustReadFile("./testdata/overwrite_relative/main.go"),
+			expectedOutput: "Foo is called\nFoo2 is called",
+		},
+		{
+			name:  "overwrite relative path main module",
+			wd:    "./internal",
+			paths: []string{"./testmainpkg"},
+			replaceItms: []uwagaki.ReplaceItem{
+				{
+					Mod:     "github.com/hajimehoshi/uwagaki",
+					Path:    "internal/testpkg/foo.go",
+					Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo.go"),
+				},
+			},
+			expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
+			expectedOutput: "Overwritten Foo is called",
+		},
+		{
+			name:           "gomod with replace",
+			wd:             tmpWithGoMod,
+			paths:          []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
+			replaceItms:    nil,
+			expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
+			expectedOutput: "Replaced Foo is called",
+		},
+	}
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// TODO: Use t.Chdir after Go 1.24.
@@ -158,7 +270,7 @@ func TestCreateEnvironment(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				if got, want := strings.TrimSpace(string(out)), "Overwritten Foo is called"; got != want {
+				if got, want := strings.TrimSpace(string(out)), tc.expectedOutput; got != want {
 					t.Errorf("got: %s, want: %s", got, want)
 				}
 			}
