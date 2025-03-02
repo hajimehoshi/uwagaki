@@ -108,6 +108,16 @@ func TestCreateEnvironment(t *testing.T) {
 		if err := cmd.Run(); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.WriteFile(filepath.Join(tmpWithLocalGoMod, "main.go"), []byte(`package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("Package foo's main is called")
+}
+`), 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	{
 		cmd := exec.Command("go", "get", "github.com/hajimehoshi/uwagaki")
@@ -167,8 +177,7 @@ func Foo() {
 
 	var testCases = []testCase{
 		{
-			name: "overwrite external module",
-
+			name:  "overwrite external module",
 			wd:    ".",
 			paths: []string{"golang.org/x/text/language@v0.22.0"},
 			replaceItms: []uwagaki.ReplaceItem{
@@ -183,8 +192,7 @@ func Foo() {
 			expectedOutput:  "Hello, Uwagaki!",
 		},
 		{
-			name: "overwrite external module at temporary directory",
-
+			name:  "overwrite external module at temporary directory",
 			wd:    tmp,
 			paths: []string{"golang.org/x/text/language@v0.22.0"},
 			replaceItms: []uwagaki.ReplaceItem{
@@ -199,8 +207,7 @@ func Foo() {
 			expectedOutput:  "Hello, Uwagaki!",
 		},
 		{
-			name: "overwrite relative path module",
-
+			name:  "overwrite relative path module",
 			wd:    ".",
 			paths: []string{"./internal/testpkg"},
 			replaceItms: []uwagaki.ReplaceItem{
@@ -234,12 +241,28 @@ func Foo() {
 			expectedOutput: "Overwritten Foo is called",
 		},
 		{
-			name:           "local go.mod with replace",
+			name:           "local go.mod with absolute path",
 			wd:             tmpWithLocalGoMod,
 			paths:          []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
 			replaceItms:    nil,
 			expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
 			expectedOutput: "Replaced Foo is called",
+		},
+		{
+			name:           "local go.mod with relative path",
+			wd:             tmpWithLocalGoMod,
+			paths:          []string{"."},
+			replaceItms:    nil,
+			expectedPaths:  []string{"foo"},
+			expectedOutput: "Package foo's main is called",
+		},
+		{
+			name:           "real go.mod with absolute path",
+			wd:             filepath.Join(tmpWithRealGoMod, "tools"),
+			paths:          []string{"golang.org/x/tools/cmd/stringer"},
+			replaceItms:    nil,
+			expectedPaths:  []string{"golang.org/x/tools/cmd/stringer"},
+			expectedOutput: "This is a new stringer",
 		},
 		{
 			name:           "real go.mod with relative path",

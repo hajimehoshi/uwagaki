@@ -148,21 +148,32 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 		}
 	}
 
-	// If the current module is go-gettable, redirect the current module to its current source, espcially for directory packge paths.
+	// Redirect the current module to its current source, espcially for directory packge paths.
 	if origModPath != "" {
-		// go get
-		var goGetWorked bool
+		// A local module might not be go-gettable. Rewrite go.mod to add a dummy require.
 		{
-			var buf bytes.Buffer
-			cmd := exec.Command("go", "get", origModPath)
-			cmd.Stderr = &buf
-			cmd.Dir = work
-			err := cmd.Run()
-			// go get might fail if the module is not go-gettable.
-			goGetWorked = err == nil
+			goModContent, err := os.ReadFile(filepath.Join(work, "go.mod"))
+			if err != nil {
+				return "", nil, err
+			}
+			mod, err := modfile.Parse("go.mod", goModContent, nil)
+			if err != nil {
+				return "", nil, err
+			}
+			// The version number is a dummy. This package will be redirected by the replace directive so the version doesn't matter.
+			if err := mod.AddRequire(origModPath, "v0.0.0"); err != nil {
+				return "", nil, err
+			}
+			newGoModContent, err := mod.Format()
+			if err != nil {
+				return "", nil, err
+			}
+			if err := os.WriteFile(filepath.Join(work, "go.mod"), newGoModContent, 0644); err != nil {
+				return "", nil, err
+			}
 		}
-		if goGetWorked {
-			// go mod edit
+		// go mod edit
+		{
 			dstRel := filepath.Dir(currentGoMod)
 			var buf bytes.Buffer
 			// TODO: What if the file path includes a space?
