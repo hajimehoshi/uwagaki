@@ -89,16 +89,22 @@ func TestCreateEnvironment(t *testing.T) {
 	}
 	defer os.RemoveAll(tmp)
 
-	tmpWithGoMod, err := os.MkdirTemp("", "")
+	tmpWithLocalGoMod, err := os.MkdirTemp("", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpWithGoMod)
+	defer os.RemoveAll(tmpWithLocalGoMod)
+
+	tmpWithRealGoMod, err := os.MkdirTemp("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpWithRealGoMod)
 
 	{
 		cmd := exec.Command("go", "mod", "init", "foo")
 		cmd.Stderr = os.Stderr
-		cmd.Dir = tmpWithGoMod
+		cmd.Dir = tmpWithLocalGoMod
 		if err := cmd.Run(); err != nil {
 			t.Fatal(err)
 		}
@@ -106,7 +112,7 @@ func TestCreateEnvironment(t *testing.T) {
 	{
 		cmd := exec.Command("go", "get", "github.com/hajimehoshi/uwagaki")
 		cmd.Stderr = os.Stderr
-		cmd.Dir = tmpWithGoMod
+		cmd.Dir = tmpWithLocalGoMod
 		if err := cmd.Run(); err != nil {
 			t.Fatal(err)
 		}
@@ -117,7 +123,7 @@ func TestCreateEnvironment(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		replaced := filepath.Join(tmpWithGoMod, "_uwagaki")
+		replaced := filepath.Join(tmpWithLocalGoMod, "_uwagaki")
 		if err := copyFSWithoutDotGit(replaced, wd); err != nil {
 			t.Fatal(err)
 		}
@@ -133,8 +139,28 @@ func Foo() {
 		}
 		cmd := exec.Command("go", "mod", "edit", "-replace=github.com/hajimehoshi/uwagaki=."+string(filepath.Separator)+"_uwagaki")
 		cmd.Stderr = os.Stderr
-		cmd.Dir = tmpWithGoMod
+		cmd.Dir = tmpWithLocalGoMod
 		if err := cmd.Run(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	{
+		cmd := exec.Command("git", "clone", "--depth=1", "https://go.googlesource.com/tools")
+		cmd.Stderr = os.Stderr
+		cmd.Dir = tmpWithRealGoMod
+		if err := cmd.Run(); err != nil {
+			t.Fatal(err)
+		}
+
+		// Modify cmd/stringer/main.go for testing.
+		if err := os.RemoveAll(filepath.Join(tmpWithRealGoMod, "tools", "cmd", "stringer")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(tmpWithRealGoMod, "tools", "cmd", "stringer"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(tmpWithRealGoMod, "tools", "cmd", "stringer", "main.go"), mustReadFile("./testdata/stringer/main.go"), 0644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -208,12 +234,20 @@ func Foo() {
 			expectedOutput: "Overwritten Foo is called",
 		},
 		{
-			name:           "gomod with replace",
-			wd:             tmpWithGoMod,
+			name:           "local go.mod with replace",
+			wd:             tmpWithLocalGoMod,
 			paths:          []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
 			replaceItms:    nil,
 			expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
 			expectedOutput: "Replaced Foo is called",
+		},
+		{
+			name:           "real go.mod with relative path",
+			wd:             filepath.Join(tmpWithRealGoMod, "tools"),
+			paths:          []string{"./cmd/stringer"},
+			replaceItms:    nil,
+			expectedPaths:  []string{"golang.org/x/tools/cmd/stringer"},
+			expectedOutput: "This is a new stringer",
 		},
 	}
 

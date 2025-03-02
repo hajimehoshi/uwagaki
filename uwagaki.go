@@ -63,6 +63,7 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 
 	randomModuleName := "uwagaki_" + time.Now().UTC().Format("20060102150405")
 
+	var origModPath string
 	if currentGoMod != "" {
 		// Copy the current go.mod and go.sum to the work directory, but with modifying the module name.
 		content, err := os.ReadFile(currentGoMod)
@@ -73,9 +74,11 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 		if err != nil {
 			return "", nil, err
 		}
+		origModPath = mod.Module.Mod.Path
 		if err := mod.AddModuleStmt(randomModuleName); err != nil {
 			return "", nil, err
 		}
+
 		// Fix the 'replace' paths.
 		dir := filepath.Dir(currentGoMod)
 		// Copy the slice as AddReplace might affect the original slice.
@@ -90,12 +93,26 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 			}
 			mod.AddReplace(r.Old.Path, r.Old.Version, filepath.Join(dir, r.New.Path), r.New.Version)
 		}
+
+		// Write the new go.mod.
 		content2, err := mod.Format()
 		if err != nil {
 			return "", nil, err
 		}
 		if err := os.WriteFile(filepath.Join(work, "go.mod"), content2, 0644); err != nil {
 			return "", nil, err
+		}
+
+		// Copy go.sum if exists.
+		goSum := strings.TrimSuffix(currentGoMod, ".mod") + ".sum"
+		if _, err := os.Stat(goSum); err == nil {
+			content, err := os.ReadFile(goSum)
+			if err != nil {
+				return "", nil, err
+			}
+			if err := os.WriteFile(filepath.Join(work, "go.sum"), content, 0644); err != nil {
+				return "", nil, err
+			}
 		}
 	} else {
 		// go mod init
@@ -123,6 +140,33 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 			var buf bytes.Buffer
 			cmd := exec.Command("go", "get")
 			cmd.Args = append(cmd.Args, nonDirPaths...)
+			cmd.Stderr = &buf
+			cmd.Dir = work
+			if err := cmd.Run(); err != nil {
+				return "", nil, fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
+			}
+		}
+	}
+
+	// If the current module is go-gettable, redirect the current module to its current source, espcially for directory packge paths.
+	if origModPath != "" {
+		// go get
+		var goGetWorked bool
+		{
+			var buf bytes.Buffer
+			cmd := exec.Command("go", "get", origModPath)
+			cmd.Stderr = &buf
+			cmd.Dir = work
+			err := cmd.Run()
+			// go get might fail if the module is not go-gettable.
+			goGetWorked = err == nil
+		}
+		if goGetWorked {
+			// go mod edit
+			dstRel := filepath.Dir(currentGoMod)
+			var buf bytes.Buffer
+			// TODO: What if the file path includes a space?
+			cmd := exec.Command("go", "mod", "edit", "-replace", origModPath+"="+dstRel)
 			cmd.Stderr = &buf
 			cmd.Dir = work
 			if err := cmd.Run(); err != nil {
