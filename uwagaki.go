@@ -24,6 +24,8 @@ type ReplaceItem struct {
 	Mod string
 
 	// Path is a file path in the module.
+	// Path's separator is slash.
+	// Path must be a regulra file path, not a directory path.
 	Path string
 
 	// Content is a file content.
@@ -138,6 +140,14 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 
 	modVisited := map[string]struct{}{}
 	for _, r := range replaces {
+		stat, err := os.Stat(filepath.FromSlash(r.Path))
+		if err != nil {
+			return "", nil, err
+		}
+		if stat.IsDir() {
+			return "", nil, fmt.Errorf("uwagaki: ReplaceItem.Path must be a file: %s", r.Path)
+		}
+
 		if _, ok := modVisited[r.Mod]; !ok {
 			// go get
 			{
