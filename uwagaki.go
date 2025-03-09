@@ -138,17 +138,9 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 
 	replacedModDir := filepath.Join(work, "mod")
 
-	modVisited := map[string]struct{}{}
+	modPaths := map[string]string{}
 	for _, r := range replaces {
-		stat, err := os.Stat(filepath.FromSlash(r.Path))
-		if err != nil {
-			return "", nil, err
-		}
-		if stat.IsDir() {
-			return "", nil, fmt.Errorf("uwagaki: ReplaceItem.Path must be a file: %s", r.Path)
-		}
-
-		if _, ok := modVisited[r.Mod]; !ok {
+		if _, ok := modPaths[r.Mod]; !ok {
 			// go get
 			{
 				var buf bytes.Buffer
@@ -177,7 +169,16 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 				return "", nil, err
 			}
 
-			modVisited[r.Mod] = struct{}{}
+			modPaths[r.Mod] = modFilepath
+		}
+
+		stat, err := os.Stat(filepath.Join(modPaths[r.Mod], filepath.FromSlash(r.Path)))
+		if err == nil {
+			if stat.IsDir() {
+				return "", nil, fmt.Errorf("uwagaki: ReplaceItem.Path must be a file: %s", r.Path)
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", nil, err
 		}
 
 		dst := filepath.Join(replacedModDir, filepath.FromSlash(r.Mod), filepath.FromSlash(r.Path))
