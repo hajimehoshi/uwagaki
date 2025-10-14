@@ -235,6 +235,17 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 		newPaths[i] = path.Join(currentModPath, filepath.ToSlash(rel))
 	}
 
+	// Run go mod downlaod
+	{
+		var buf bytes.Buffer
+		cmd := exec.Command("go", "mod", "download")
+		cmd.Stderr = &buf
+		cmd.Dir = work
+		if err := cmd.Run(); err != nil {
+			return "", nil, fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), err, buf.String())
+		}
+	}
+
 	return work, newPaths, nil
 }
 
