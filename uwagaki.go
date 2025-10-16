@@ -55,7 +55,7 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 	// If the current directory has go.mod, use this.
 	var currentGoMod string
 	{
-		cmd := exec.Command("go", "list", "-m", "-f", "{{.GoMod}}")
+		cmd := exec.Command("go", "env", "GOMOD")
 		out, err := cmd.Output()
 		if err == nil {
 			// Ignore the error.
