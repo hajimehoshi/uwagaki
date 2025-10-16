@@ -61,8 +61,8 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 			// Ignore the error.
 			currentGoMod = strings.TrimSpace(string(out))
 		}
-		// On Windows, `go env GOMOD` might return an invalid path like `NUL`.
-		if filepath.Base(currentGoMod) != "go.mod" {
+		// GOMOD can be os.DevNull, and ignore it in that case.
+		if currentGoMod == os.DevNull {
 			currentGoMod = ""
 		}
 	}
