@@ -125,18 +125,6 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 				return "", nil, err
 			}
 		}
-
-		// Run go-get to get the module infomation if possible.
-		// Without this, child pakages cannot be found.
-		{
-			cmd := exec.Command("go", "get", origModPath)
-			var buf bytes.Buffer
-			cmd.Stderr = &buf
-			cmd.Dir = work
-			if err := cmd.Run(); err != nil {
-				// If go-get fails, this indicates that the package is unavailable publicly.
-			}
-		}
 	} else {
 		// go mod init
 		var buf bytes.Buffer
