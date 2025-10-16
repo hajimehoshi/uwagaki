@@ -150,7 +150,7 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 			// go get
 			{
 				var buf bytes.Buffer
-				cmd := exec.Command("go", "get", r.Mod)
+				cmd := exec.Command("go", "get", r.Mod+"/...")
 				cmd.Stderr = &buf
 				cmd.Dir = work
 				if err := cmd.Run(); err != nil {
