@@ -61,10 +61,15 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 			// Ignore the error.
 			currentGoMod = strings.TrimSpace(string(out))
 		}
+		// On Windows, `go env GOMOD` might return an invalid path like `NUL`.
+		if filepath.Base(currentGoMod) != "go.mod" {
+			currentGoMod = ""
+		}
 	}
 
 	randomModuleName := "uwagaki_" + time.Now().UTC().Format("20060102150405")
 
+	var currentModPath string
 	if currentGoMod != "" {
 		// Copy the current go.mod and go.sum to the work directory, but with modifying the module name.
 		content, err := os.ReadFile(currentGoMod)
@@ -76,6 +81,7 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 			return "", nil, err
 		}
 		origModPath := mod.Module.Mod.Path
+		currentModPath = origModPath
 		if err := mod.AddModuleStmt(randomModuleName); err != nil {
 			return "", nil, err
 		}
@@ -196,19 +202,6 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 
 	if len(paths) == 0 {
 		paths = []string{"."}
-	}
-
-	var currentModPath string
-	if currentGoMod != "" {
-		cmd := exec.Command("go", "list", "-m", "-f", "{{.Path}}")
-		out, err := cmd.Output()
-		if err != nil {
-			if ee, ok := err.(*exec.ExitError); ok {
-				return "", nil, fmt.Errorf("uwagaki: '%s' failed: %w\n%s", strings.Join(cmd.Args, " "), ee, ee.Stderr)
-			}
-			return "", nil, err
-		}
-		currentModPath = strings.TrimSpace(string(out))
 	}
 
 	newPaths = make([]string, len(paths))
