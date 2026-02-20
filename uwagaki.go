@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -102,7 +103,11 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 		}
 
 		// The version number is a dummy. This package will be redirected by the replace directive so the version doesn't matter.
-		if err := mod.AddRequire(origModPath, "v0.0.0"); err != nil {
+		v := "v0.0.0"
+		if m := regexp.MustCompile(`/v(\d+)$`).FindStringSubmatch(origModPath); m != nil {
+			v = "v" + (m[1] + ".0.0")
+		}
+		if err := mod.AddRequire(origModPath, v); err != nil {
 			return "", nil, err
 		}
 

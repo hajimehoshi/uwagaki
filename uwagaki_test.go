@@ -84,42 +84,44 @@ func copyFSWithoutDotGit(dst, src string) error {
 }
 
 func TestCreateEnvironment(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmp)
+	for _, mod := range []string{"foo", "foo/v2", "foo/v2/bar"} {
+		t.Run(mod, func(t *testing.T) {
+			tmp, err := os.MkdirTemp("", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.RemoveAll(tmp)
 
-	tmpWithLocalGoMod, err := os.MkdirTemp("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpWithLocalGoMod)
+			tmpWithLocalGoMod, err := os.MkdirTemp("", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.RemoveAll(tmpWithLocalGoMod)
 
-	tmpWithRealGoMod, err := os.MkdirTemp("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpWithRealGoMod)
+			tmpWithRealGoMod, err := os.MkdirTemp("", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.RemoveAll(tmpWithRealGoMod)
 
-	{
-		cmd := exec.Command("go", "mod", "init", "foo")
-		cmd.Stderr = os.Stderr
-		cmd.Dir = tmpWithLocalGoMod
-		if err := cmd.Run(); err != nil {
-			t.Fatal(err)
-		}
-	}
-	{
-		cmd := exec.Command("go", "get", "golang.org/x/sync@v0.11.0")
-		cmd.Stderr = os.Stderr
-		cmd.Dir = tmpWithLocalGoMod
-		if err := cmd.Run(); err != nil {
-			t.Fatal(err)
-		}
-	}
-	{
-		if err := os.WriteFile(filepath.Join(tmpWithLocalGoMod, "main.go"), []byte(`package main
+			{
+				cmd := exec.Command("go", "mod", "init", mod)
+				cmd.Stderr = os.Stderr
+				cmd.Dir = tmpWithLocalGoMod
+				if err := cmd.Run(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			{
+				cmd := exec.Command("go", "get", "golang.org/x/sync@v0.11.0")
+				cmd.Stderr = os.Stderr
+				cmd.Dir = tmpWithLocalGoMod
+				if err := cmd.Run(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			{
+				if err := os.WriteFile(filepath.Join(tmpWithLocalGoMod, "main.go"), []byte(`package main
 
 import "golang.org/x/sync"
 
@@ -127,28 +129,28 @@ func main() {
 	sync.AdditionalFuncByUwagaki()
 }
 `), 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	{
-		cmd := exec.Command("go", "get", "github.com/hajimehoshi/uwagaki")
-		cmd.Stderr = os.Stderr
-		cmd.Dir = tmpWithLocalGoMod
-		if err := cmd.Run(); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// Prepare replaced module.
-	{
-		wd, err := os.Getwd()
-		if err != nil {
-			t.Fatal(err)
-		}
-		replaced := filepath.Join(tmpWithLocalGoMod, "_uwagaki")
-		if err := copyFSWithoutDotGit(replaced, wd); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(replaced, "internal", "testpkg", "foo.go"), []byte(`package testpkg
+					t.Fatal(err)
+				}
+			}
+			{
+				cmd := exec.Command("go", "get", "github.com/hajimehoshi/uwagaki")
+				cmd.Stderr = os.Stderr
+				cmd.Dir = tmpWithLocalGoMod
+				if err := cmd.Run(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Prepare replaced module.
+			{
+				wd, err := os.Getwd()
+				if err != nil {
+					t.Fatal(err)
+				}
+				replaced := filepath.Join(tmpWithLocalGoMod, "_uwagaki")
+				if err := copyFSWithoutDotGit(replaced, wd); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(replaced, "internal", "testpkg", "foo.go"), []byte(`package testpkg
 
 import "fmt"
 
@@ -156,260 +158,262 @@ func Foo() {
 	fmt.Println("Replaced Foo is called")
 }
 `), 0644); err != nil {
-			t.Fatal(err)
-		}
-		cmd := exec.Command("go", "mod", "edit", "-replace=github.com/hajimehoshi/uwagaki=."+string(filepath.Separator)+"_uwagaki")
-		cmd.Stderr = os.Stderr
-		cmd.Dir = tmpWithLocalGoMod
-		if err := cmd.Run(); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	{
-		var buf bytes.Buffer
-		cmd := exec.Command("git", "clone", "--depth=1", "--branch=v0.30.0", "https://go.googlesource.com/tools")
-		cmd.Stderr = &buf
-		cmd.Dir = tmpWithRealGoMod
-		if err := cmd.Run(); err != nil {
-			t.Fatalf("git clone failed: %v\n%s", err, buf.String())
-		}
-
-		// Modify cmd/stringer/main.go for testing.
-		if err := os.RemoveAll(filepath.Join(tmpWithRealGoMod, "tools", "cmd", "stringer")); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.MkdirAll(filepath.Join(tmpWithRealGoMod, "tools", "cmd", "stringer"), 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(tmpWithRealGoMod, "tools", "cmd", "stringer", "main.go"), mustReadFile("./testdata/stringer/main.go"), 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	var testCases = []testCase{
-		{
-			name:  "overwrite external module",
-			wd:    ".",
-			paths: []string{"golang.org/x/text/language@v0.22.0"},
-			replaceItms: []uwagaki.ReplaceItem{
-				{
-					Mod:     "golang.org/x/text",
-					Path:    "language/additional_file_by_uwagaki.go",
-					Content: mustReadFile("./testdata/language/additional_file_by_uwagaki.go"),
-				},
-			},
-			expectedPaths:   []string{"golang.org/x/text/language@v0.22.0"},
-			temporaryMainGo: mustReadFile("./testdata/overwrite_external/main.go"),
-			expectedOutput:  "Hello, Uwagaki (language)!",
-		},
-		{
-			name:  "overwrite external module at temporary directory",
-			wd:    tmp,
-			paths: []string{"golang.org/x/text/language@v0.22.0"},
-			replaceItms: []uwagaki.ReplaceItem{
-				{
-					Mod:     "golang.org/x/text",
-					Path:    "language/additional_file_by_uwagaki.go",
-					Content: mustReadFile("./testdata/language/additional_file_by_uwagaki.go"),
-				},
-			},
-			expectedPaths:   []string{"golang.org/x/text/language@v0.22.0"},
-			temporaryMainGo: mustReadFile("./testdata/overwrite_external/main.go"),
-			expectedOutput:  "Hello, Uwagaki (language)!",
-		},
-		{
-			name:  "overwrite relative path module",
-			wd:    ".",
-			paths: []string{"./internal/testpkg"},
-			replaceItms: []uwagaki.ReplaceItem{
-				{
-					Mod:     "github.com/hajimehoshi/uwagaki",
-					Path:    "foo.go",
-					Content: mustReadFile("./testdata/overwrite_relative/uwagaki/foo.go"),
-				},
-				{
-					Mod:     "github.com/hajimehoshi/uwagaki",
-					Path:    "internal/testpkg/foo2.go",
-					Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo2.go"),
-				},
-			},
-			expectedPaths:   []string{"github.com/hajimehoshi/uwagaki/internal/testpkg"},
-			temporaryMainGo: mustReadFile("./testdata/overwrite_relative/main.go"),
-			expectedOutput:  "Foo is called\nFoo2 is called",
-		},
-		{
-			name:  "overwrite relative path main module",
-			wd:    "./internal",
-			paths: []string{"./testmainpkg"},
-			replaceItms: []uwagaki.ReplaceItem{
-				{
-					Mod:     "github.com/hajimehoshi/uwagaki",
-					Path:    "internal/testpkg/foo.go",
-					Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo.go"),
-				},
-			},
-			expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
-			expectedOutput: "Overwritten Foo is called",
-		},
-		{
-			name:  "overwrite relative path main module (v2)",
-			wd:    "./internal",
-			paths: []string{"./testmainpkg/v2"},
-			replaceItms: []uwagaki.ReplaceItem{
-				{
-					Mod:     "github.com/hajimehoshi/uwagaki",
-					Path:    "internal/testpkg/foo.go",
-					Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo.go"),
-				},
-			},
-			expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg/v2"},
-			expectedOutput: "Overwritten Foo is called",
-		},
-		{
-			name:  "overwrite relative path main module (v2) 2",
-			wd:    "./internal/testmainpkg/v2",
-			paths: []string{"."},
-			replaceItms: []uwagaki.ReplaceItem{
-				{
-					Mod:     "github.com/hajimehoshi/uwagaki",
-					Path:    "internal/testpkg/foo.go",
-					Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo.go"),
-				},
-			},
-			expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg/v2"},
-			expectedOutput: "Overwritten Foo is called",
-		},
-		{
-			name:           "local go.mod with external module",
-			wd:             tmpWithLocalGoMod,
-			paths:          []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
-			replaceItms:    nil,
-			expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
-			expectedOutput: "Replaced Foo is called",
-		},
-		{
-			name:           "local go.mod with external module (v2)",
-			wd:             tmpWithLocalGoMod,
-			paths:          []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg/v2"},
-			replaceItms:    nil,
-			expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg/v2"},
-			expectedOutput: "Replaced Foo is called",
-		},
-		{
-			name:  "local go.mod with absolute path",
-			wd:    tmpWithLocalGoMod,
-			paths: []string{"foo"},
-			replaceItms: []uwagaki.ReplaceItem{
-				{
-					Mod:     "golang.org/x/sync",
-					Path:    "additional_file_by_uwagaki.go",
-					Content: mustReadFile("./testdata/sync/additional_file_by_uwagaki.go"),
-				},
-			},
-			expectedPaths:  []string{"foo"},
-			expectedOutput: "Hello, Uwagaki (sync)!",
-		},
-		{
-			name:  "local go.mod with relative path",
-			wd:    tmpWithLocalGoMod,
-			paths: []string{"."},
-			replaceItms: []uwagaki.ReplaceItem{
-				{
-					Mod:     "golang.org/x/sync",
-					Path:    "additional_file_by_uwagaki.go",
-					Content: mustReadFile("./testdata/sync/additional_file_by_uwagaki.go"),
-				},
-			},
-			expectedPaths:  []string{"foo"},
-			expectedOutput: "Hello, Uwagaki (sync)!",
-		},
-		{
-			name:  "real go.mod with absolute path",
-			wd:    filepath.Join(tmpWithRealGoMod, "tools"),
-			paths: []string{"golang.org/x/tools/cmd/stringer"},
-			replaceItms: []uwagaki.ReplaceItem{
-				{
-					Mod:     "golang.org/x/sync",
-					Path:    "additional_file_by_uwagaki.go",
-					Content: mustReadFile("./testdata/sync/additional_file_by_uwagaki.go"),
-				},
-			},
-			expectedPaths:  []string{"golang.org/x/tools/cmd/stringer"},
-			expectedOutput: "Hello, Uwagaki (sync)!",
-		},
-		{
-			name:  "real go.mod with relative path",
-			wd:    filepath.Join(tmpWithRealGoMod, "tools"),
-			paths: []string{"./cmd/stringer"},
-			replaceItms: []uwagaki.ReplaceItem{
-				{
-					Mod:     "golang.org/x/sync",
-					Path:    "additional_file_by_uwagaki.go",
-					Content: mustReadFile("./testdata/sync/additional_file_by_uwagaki.go"),
-				},
-			},
-			expectedPaths:  []string{"golang.org/x/tools/cmd/stringer"},
-			expectedOutput: "Hello, Uwagaki (sync)!",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// TODO: Use t.Chdir after Go 1.24.
-			origWd, err := os.Getwd()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Chdir(tc.wd); err != nil {
-				t.Fatal(err)
-			}
-			defer os.Chdir(origWd)
-
-			dir, paths, err := uwagaki.CreateEnvironment(tc.paths, tc.replaceItms)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer os.RemoveAll(dir)
-
-			if got, want := paths, tc.expectedPaths; !slices.Equal(got, want) {
-				t.Errorf("paths: got: %v, want: %v", got, want)
-			}
-
-			if len(tc.temporaryMainGo) > 0 {
-				if err := os.WriteFile(filepath.Join(dir, "main.go"), tc.temporaryMainGo, 0644); err != nil {
 					t.Fatal(err)
 				}
+				cmd := exec.Command("go", "mod", "edit", "-replace=github.com/hajimehoshi/uwagaki=."+string(filepath.Separator)+"_uwagaki")
+				cmd.Stderr = os.Stderr
+				cmd.Dir = tmpWithLocalGoMod
+				if err := cmd.Run(); err != nil {
+					t.Fatal(err)
+				}
+			}
 
-				cmd := exec.Command("go", "run")
-				cmd.Args = append(cmd.Args, "main.go")
-				cmd.Dir = dir
-				out, err := cmd.Output()
-				if err != nil {
-					if ee, ok := err.(*exec.ExitError); ok {
-						t.Fatalf("exit status: %d\n%s", ee.ExitCode(), ee.Stderr)
+			{
+				var buf bytes.Buffer
+				cmd := exec.Command("git", "clone", "--depth=1", "--branch=v0.30.0", "https://go.googlesource.com/tools")
+				cmd.Stderr = &buf
+				cmd.Dir = tmpWithRealGoMod
+				if err := cmd.Run(); err != nil {
+					t.Fatalf("git clone failed: %v\n%s", err, buf.String())
+				}
+
+				// Modify cmd/stringer/main.go for testing.
+				if err := os.RemoveAll(filepath.Join(tmpWithRealGoMod, "tools", "cmd", "stringer")); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.MkdirAll(filepath.Join(tmpWithRealGoMod, "tools", "cmd", "stringer"), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(tmpWithRealGoMod, "tools", "cmd", "stringer", "main.go"), mustReadFile("./testdata/stringer/main.go"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			var testCases = []testCase{
+				{
+					name:  "overwrite external module",
+					wd:    ".",
+					paths: []string{"golang.org/x/text/language@v0.22.0"},
+					replaceItms: []uwagaki.ReplaceItem{
+						{
+							Mod:     "golang.org/x/text",
+							Path:    "language/additional_file_by_uwagaki.go",
+							Content: mustReadFile("./testdata/language/additional_file_by_uwagaki.go"),
+						},
+					},
+					expectedPaths:   []string{"golang.org/x/text/language@v0.22.0"},
+					temporaryMainGo: mustReadFile("./testdata/overwrite_external/main.go"),
+					expectedOutput:  "Hello, Uwagaki (language)!",
+				},
+				{
+					name:  "overwrite external module at temporary directory",
+					wd:    tmp,
+					paths: []string{"golang.org/x/text/language@v0.22.0"},
+					replaceItms: []uwagaki.ReplaceItem{
+						{
+							Mod:     "golang.org/x/text",
+							Path:    "language/additional_file_by_uwagaki.go",
+							Content: mustReadFile("./testdata/language/additional_file_by_uwagaki.go"),
+						},
+					},
+					expectedPaths:   []string{"golang.org/x/text/language@v0.22.0"},
+					temporaryMainGo: mustReadFile("./testdata/overwrite_external/main.go"),
+					expectedOutput:  "Hello, Uwagaki (language)!",
+				},
+				{
+					name:  "overwrite relative path module",
+					wd:    ".",
+					paths: []string{"./internal/testpkg"},
+					replaceItms: []uwagaki.ReplaceItem{
+						{
+							Mod:     "github.com/hajimehoshi/uwagaki",
+							Path:    "foo.go",
+							Content: mustReadFile("./testdata/overwrite_relative/uwagaki/foo.go"),
+						},
+						{
+							Mod:     "github.com/hajimehoshi/uwagaki",
+							Path:    "internal/testpkg/foo2.go",
+							Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo2.go"),
+						},
+					},
+					expectedPaths:   []string{"github.com/hajimehoshi/uwagaki/internal/testpkg"},
+					temporaryMainGo: mustReadFile("./testdata/overwrite_relative/main.go"),
+					expectedOutput:  "Foo is called\nFoo2 is called",
+				},
+				{
+					name:  "overwrite relative path main module",
+					wd:    "./internal",
+					paths: []string{"./testmainpkg"},
+					replaceItms: []uwagaki.ReplaceItem{
+						{
+							Mod:     "github.com/hajimehoshi/uwagaki",
+							Path:    "internal/testpkg/foo.go",
+							Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo.go"),
+						},
+					},
+					expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
+					expectedOutput: "Overwritten Foo is called",
+				},
+				{
+					name:  "overwrite relative path main module (v2)",
+					wd:    "./internal",
+					paths: []string{"./testmainpkg/v2"},
+					replaceItms: []uwagaki.ReplaceItem{
+						{
+							Mod:     "github.com/hajimehoshi/uwagaki",
+							Path:    "internal/testpkg/foo.go",
+							Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo.go"),
+						},
+					},
+					expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg/v2"},
+					expectedOutput: "Overwritten Foo is called",
+				},
+				{
+					name:  "overwrite relative path main module (v2) 2",
+					wd:    "./internal/testmainpkg/v2",
+					paths: []string{"."},
+					replaceItms: []uwagaki.ReplaceItem{
+						{
+							Mod:     "github.com/hajimehoshi/uwagaki",
+							Path:    "internal/testpkg/foo.go",
+							Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo.go"),
+						},
+					},
+					expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg/v2"},
+					expectedOutput: "Overwritten Foo is called",
+				},
+				{
+					name:           "local go.mod with external module",
+					wd:             tmpWithLocalGoMod,
+					paths:          []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
+					replaceItms:    nil,
+					expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
+					expectedOutput: "Replaced Foo is called",
+				},
+				{
+					name:           "local go.mod with external module (v2)",
+					wd:             tmpWithLocalGoMod,
+					paths:          []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg/v2"},
+					replaceItms:    nil,
+					expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg/v2"},
+					expectedOutput: "Replaced Foo is called",
+				},
+				{
+					name:  "local go.mod with absolute path",
+					wd:    tmpWithLocalGoMod,
+					paths: []string{mod},
+					replaceItms: []uwagaki.ReplaceItem{
+						{
+							Mod:     "golang.org/x/sync",
+							Path:    "additional_file_by_uwagaki.go",
+							Content: mustReadFile("./testdata/sync/additional_file_by_uwagaki.go"),
+						},
+					},
+					expectedPaths:  []string{mod},
+					expectedOutput: "Hello, Uwagaki (sync)!",
+				},
+				{
+					name:  "local go.mod with relative path",
+					wd:    tmpWithLocalGoMod,
+					paths: []string{"."},
+					replaceItms: []uwagaki.ReplaceItem{
+						{
+							Mod:     "golang.org/x/sync",
+							Path:    "additional_file_by_uwagaki.go",
+							Content: mustReadFile("./testdata/sync/additional_file_by_uwagaki.go"),
+						},
+					},
+					expectedPaths:  []string{mod},
+					expectedOutput: "Hello, Uwagaki (sync)!",
+				},
+				{
+					name:  "real go.mod with absolute path",
+					wd:    filepath.Join(tmpWithRealGoMod, "tools"),
+					paths: []string{"golang.org/x/tools/cmd/stringer"},
+					replaceItms: []uwagaki.ReplaceItem{
+						{
+							Mod:     "golang.org/x/sync",
+							Path:    "additional_file_by_uwagaki.go",
+							Content: mustReadFile("./testdata/sync/additional_file_by_uwagaki.go"),
+						},
+					},
+					expectedPaths:  []string{"golang.org/x/tools/cmd/stringer"},
+					expectedOutput: "Hello, Uwagaki (sync)!",
+				},
+				{
+					name:  "real go.mod with relative path",
+					wd:    filepath.Join(tmpWithRealGoMod, "tools"),
+					paths: []string{"./cmd/stringer"},
+					replaceItms: []uwagaki.ReplaceItem{
+						{
+							Mod:     "golang.org/x/sync",
+							Path:    "additional_file_by_uwagaki.go",
+							Content: mustReadFile("./testdata/sync/additional_file_by_uwagaki.go"),
+						},
+					},
+					expectedPaths:  []string{"golang.org/x/tools/cmd/stringer"},
+					expectedOutput: "Hello, Uwagaki (sync)!",
+				},
+			}
+
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					// TODO: Use t.Chdir after Go 1.24.
+					origWd, err := os.Getwd()
+					if err != nil {
+						t.Fatal(err)
 					}
-					t.Fatal(err)
-				}
-
-				if got, want := strings.TrimSpace(string(out)), tc.expectedOutput; got != want {
-					t.Errorf("output: got: %s, want: %s", got, want)
-				}
-			} else {
-				cmd := exec.Command("go", "run")
-				cmd.Args = append(cmd.Args, paths...)
-				cmd.Dir = dir
-				out, err := cmd.Output()
-				if err != nil {
-					if ee, ok := err.(*exec.ExitError); ok {
-						t.Fatalf("exit status: %d\n%s", ee.ExitCode(), ee.Stderr)
+					if err := os.Chdir(tc.wd); err != nil {
+						t.Fatal(err)
 					}
-					t.Fatal(err)
-				}
+					defer os.Chdir(origWd)
 
-				if got, want := strings.TrimSpace(string(out)), tc.expectedOutput; got != want {
-					t.Errorf("got: %s, want: %s", got, want)
-				}
+					dir, paths, err := uwagaki.CreateEnvironment(tc.paths, tc.replaceItms)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer os.RemoveAll(dir)
+
+					if got, want := paths, tc.expectedPaths; !slices.Equal(got, want) {
+						t.Errorf("paths: got: %v, want: %v", got, want)
+					}
+
+					if len(tc.temporaryMainGo) > 0 {
+						if err := os.WriteFile(filepath.Join(dir, "main.go"), tc.temporaryMainGo, 0644); err != nil {
+							t.Fatal(err)
+						}
+
+						cmd := exec.Command("go", "run")
+						cmd.Args = append(cmd.Args, "main.go")
+						cmd.Dir = dir
+						out, err := cmd.Output()
+						if err != nil {
+							if ee, ok := err.(*exec.ExitError); ok {
+								t.Fatalf("exit status: %d\n%s", ee.ExitCode(), ee.Stderr)
+							}
+							t.Fatal(err)
+						}
+
+						if got, want := strings.TrimSpace(string(out)), tc.expectedOutput; got != want {
+							t.Errorf("output: got: %s, want: %s", got, want)
+						}
+					} else {
+						cmd := exec.Command("go", "run")
+						cmd.Args = append(cmd.Args, paths...)
+						cmd.Dir = dir
+						out, err := cmd.Output()
+						if err != nil {
+							if ee, ok := err.(*exec.ExitError); ok {
+								t.Fatalf("exit status: %d\n%s", ee.ExitCode(), ee.Stderr)
+							}
+							t.Fatal(err)
+						}
+
+						if got, want := strings.TrimSpace(string(out)), tc.expectedOutput; got != want {
+							t.Errorf("got: %s, want: %s", got, want)
+						}
+					}
+				})
 			}
 		})
 	}
