@@ -253,11 +253,47 @@ func Foo() {
 			expectedOutput: "Overwritten Foo is called",
 		},
 		{
+			name:  "overwrite relative path main module (v2)",
+			wd:    "./internal",
+			paths: []string{"./testmainpkg/v2"},
+			replaceItms: []uwagaki.ReplaceItem{
+				{
+					Mod:     "github.com/hajimehoshi/uwagaki",
+					Path:    "internal/testpkg/foo.go",
+					Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo.go"),
+				},
+			},
+			expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg/v2"},
+			expectedOutput: "Overwritten Foo is called",
+		},
+		{
+			name:  "overwrite relative path main module (v2) 2",
+			wd:    "./internal/testmainpkg/v2",
+			paths: []string{"."},
+			replaceItms: []uwagaki.ReplaceItem{
+				{
+					Mod:     "github.com/hajimehoshi/uwagaki",
+					Path:    "internal/testpkg/foo.go",
+					Content: mustReadFile("./testdata/overwrite_relative/testpkg/foo.go"),
+				},
+			},
+			expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg/v2"},
+			expectedOutput: "Overwritten Foo is called",
+		},
+		{
 			name:           "local go.mod with external module",
 			wd:             tmpWithLocalGoMod,
 			paths:          []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
 			replaceItms:    nil,
 			expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg"},
+			expectedOutput: "Replaced Foo is called",
+		},
+		{
+			name:           "local go.mod with external module (v2)",
+			wd:             tmpWithLocalGoMod,
+			paths:          []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg/v2"},
+			replaceItms:    nil,
+			expectedPaths:  []string{"github.com/hajimehoshi/uwagaki/internal/testmainpkg/v2"},
 			expectedOutput: "Replaced Foo is called",
 		},
 		{
