@@ -26,7 +26,7 @@ type ReplaceItem struct {
 
 	// Path is a file path in the module.
 	// Path's separator is slash.
-	// Path must be a regulra file path, not a directory path.
+	// Path must be a regular file path, not a directory path.
 	Path string
 
 	// Content is a file content.
@@ -196,7 +196,7 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 		if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
 			return "", nil, err
 		}
-		// Remove the file once if exists. The file is a hard link and the orignal file must not be affected.
+		// Remove the file once if exists. The file is a hard link and the original file must not be affected.
 		if err := os.Remove(dst); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return "", nil, err
 		}
@@ -233,7 +233,7 @@ func CreateEnvironment(paths []string, replaces []ReplaceItem) (workDir string, 
 		newPaths[i] = path.Join(currentModPath, filepath.ToSlash(rel))
 	}
 
-	// Run go mod downlaod
+	// Run go mod download
 	{
 		var buf bytes.Buffer
 		cmd := exec.Command("go", "mod", "download")
